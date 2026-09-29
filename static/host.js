@@ -15,7 +15,8 @@ function connect() {
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/host?key=${K}`);
   ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.type === "state") apply(m); };
   ws.onclose = (e) => {
-    const why = e.code === 4003 ? "Bad host key" : e.code === 4002 ? "Opened in another tab" : "Reconnecting…";
+    if (e.code === 4003) { localStorage.removeItem("cesura.hostkey"); return askForKey("That host key didn't work."); }
+    const why = e.code === 4002 ? "Opened in another tab" : "Reconnecting…";
     $("p-live").replaceChildren(el("span", { class: "dot warn" }), why);
     if (e.code !== 4003 && e.code !== 4002) setTimeout(connect, 2000);
   };
@@ -203,5 +204,19 @@ setInterval(() => {
   $("p-session").textContent = `${Math.floor(secs / 3600)}:${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
 }, 500);
 
+function askForKey(msg = "") {
+  document.querySelector(".host main").classList.add("hidden");
+  $("keygate").classList.remove("hidden");
+  $("keygate-err").textContent = msg;
+  $("keygate-in").focus();
+}
+$("keygate").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const k = $("keygate-in").value.trim();
+  if (!k) return;
+  localStorage.setItem("cesura.hostkey", k);
+  location.replace("/host");
+});
+
 if (key) connect();
-else $("p-live").replaceChildren(el("span", { class: "dot warn" }), "Open as /host?key=YOUR_HOST_KEY");
+else askForKey();

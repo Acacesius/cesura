@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F1012">
+<meta name="referrer" content="no-referrer">
+<title>cesura · setup</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M13 7 9 25M23 7l-4 18' stroke='%23F4B544' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/cesura.css">
+</head>
+<body>
+<main class="setup">
+  <header><span class="wordmark">cesura<svg viewBox="0 0 12 20" aria-hidden="true"><path d="M2 17L6 3"/><path d="M6.5 17L10.5 3"/></svg></span><span class="host-tag">SETUP</span></header>
+
+  <!-- token gate -->
+  <section id="gate">
+    <div class="kicker">FIRST-TIME SETUP</div>
+    <h1>Set up this server</h1>
+    <p class="lead">Paste the one-time setup token printed in the container logs (<span class="mono">docker compose logs</span>). Only someone who can see those logs can set this server up.</p>
+    <form id="gate-form" class="field" style="margin-top:28px" autocomplete="off">
+      <span class="label">Setup token</span>
+      <input id="token" class="textin mono" spellcheck="false" autocapitalize="off" aria-label="Setup token">
+      <button class="btn amber big-btn">Continue</button>
+      <div id="gate-err" class="err" role="alert"></div>
+    </form>
+  </section>
+
+  <!-- wizard -->
+  <section id="wizard" class="hidden">
+    <ol class="steps" id="steps" aria-label="Setup steps">
+      <li data-step="1">Host key</li><li data-step="2">Address</li><li data-step="3">YouTube</li><li data-step="4">Done</li>
+    </ol>
+
+    <div class="pane" data-pane="1">
+      <div class="kicker">STEP 1 OF 4</div>
+      <h1>Your host key</h1>
+      <p class="lead">It opens the host dashboard: the queue, the room code, and relinking YouTube. Keep it private.</p>
+      <div id="key-area" style="margin-top:24px"></div>
+    </div>
+
+    <div class="pane hidden" data-pane="2">
+      <div class="kicker">STEP 2 OF 4</div>
+      <h1>Public address</h1>
+      <p class="lead">The address guests will open. It goes into the invite link and QR code. It must be https:// unless it's localhost.</p>
+      <form id="url-form" class="field" style="margin-top:24px" autocomplete="off">
+        <span class="label">Public URL</span>
+        <input id="url" class="textin mono" inputmode="url" spellcheck="false" autocapitalize="off" placeholder="https://music.example.com" aria-label="Public URL">
+        <div id="url-note" class="faint" style="font-size:13px"></div>
+        <button class="btn amber big-btn">Save and continue</button>
+        <div id="url-err" class="err" role="alert"></div>
+      </form>
+    </div>
+
+    <div class="pane hidden" data-pane="3">
+      <div class="kicker">STEP 3 OF 4</div>
+      <h1>Link YouTube Music</h1>
+      <p class="lead">cesura streams through your own YouTube Music session, via a cookies.txt file exported from a private window. This file is a login to your Google account: never share it, and delete your copy after uploading.</p>
+      <div id="linker" style="margin-top:20px"></div>
+      <div class="row-actions">
+        <button class="btn" id="skip-yt">Skip for now</button>
+        <button class="btn amber" id="yt-next" disabled>Continue</button>
+      </div>
+      <div id="skip-note" class="faint hidden" style="font-size:13px;margin-top:10px">Playback stays off until YouTube is linked. You can link it later from the host dashboard.</div>
+    </div>
+
+    <div class="pane hidden" data-pane="4">
+      <div class="kicker">STEP 4 OF 4</div>
+      <h1>You're set</h1>
+      <p class="lead" id="done-lead"></p>
+      <button class="btn amber big-btn" id="finish">Open the host dashboard</button>
+      <div id="finish-err" class="err" role="alert"></div>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast hidden" role="status"></div>
+<script src="/static/common.js"></script>
+<script src="/static/link.js"></script>
+<script src="/static/setup.js"></script>
+</body>
+</html>

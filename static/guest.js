@@ -325,6 +325,7 @@ function renderSync() {
   if (!listening || !s) return;
   let dot = "", text;
   if (!s.now) text = "Nothing playing";
+  else if (s.status === "unlinked") { dot = "warn"; text = "Playback is off: YouTube not linked"; }
   else if (s.status === "loading") { dot = "warn"; text = "Loading the next song"; }
   else if (s.status === "paused") { dot = "warn"; text = "Paused for everyone"; }
   else if (lastDrift == null) { dot = "warn"; text = "Syncing…"; }

@@ -277,3 +277,53 @@ class Resolver:
                     raise
                 log.warning("upstream transport error for %s: %s, retrying", video_id, e)
                 retried = True
+
+
+# ---- linking probe (setup wizard / relink)
+
+PROBE_VIDEO_ID = os.environ.get("PROBE_VIDEO_ID", "").strip() or "BSTsnWoslP4"  # Queen - Bohemian Rhapsody (Queen Official)
+
+
+def probe_account() -> dict:
+    """Blocking. Check the saved cookies against YouTube itself.
+
+    - account: YouTube Music's account endpoint answers for these cookies
+      (server-side confirmation, not just "the right cookie names exist").
+    - aac256: format 141 (256k AAC) is offered for PROBE_VIDEO_ID. YouTube only
+      offers it to Premium sessions; without cookies the same track has 140 only.
+    - premium: inferred as account + aac256. YouTube exposes no Premium flag, and
+      yt-dlp's "Premium" video labels appear even when signed out, so they can't be used.
+    Returns booleans and a display name only; never cookie values or raw errors.
+    """
+    res = {"account": False, "name": None, "premium": False, "aac256": False, "problem": None, "video": PROBE_VIDEO_ID}
+    tmp = cookiejar.snapshot(COOKIES)
+    if not tmp:
+        res["problem"] = "missing"
+        return res
+    try:
+        try:
+            header = cookiejar.cookie_header(cookiejar.parse(tmp))
+            yt = YTMusic({"cookie": header, "authorization": "SAPISIDHASH 0_placeholder",  # ytmusicapi recomputes the real hash from the cookie
+                          "x-goog-authuser": "0", "origin": "https://music.youtube.com"})
+            info = yt.get_account_info()
+            res["account"] = True
+            res["name"] = (info.get("accountName") or "")[:80] or None
+        except Exception as e:
+            log.info("probe: account check failed (%s)", type(e).__name__)
+        try:
+            opts = {"quiet": True, "no_warnings": True, "skip_download": True, "format": "bestaudio/best", "cookiefile": tmp}
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(f"https://music.youtube.com/watch?v={PROBE_VIDEO_ID}", download=False)
+            res["aac256"] = any(f.get("format_id") == "141" for f in info.get("formats") or [])
+            if res["account"]:
+                cookiejar.write_back(tmp, COOKIES)
+        except Exception as e:
+            msg = str(e)
+            res["problem"] = "bot-check" if ("confirm you" in msg and "not a bot" in msg) else "unavailable"
+            log.info("probe: stream check failed (%s, %s)", type(e).__name__, res["problem"])
+        res["premium"] = res["account"] and res["aac256"]
+        if not res["account"] and not res["problem"]:
+            res["problem"] = "signed-out"
+        return res
+    finally:
+        os.unlink(tmp)

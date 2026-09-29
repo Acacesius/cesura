@@ -21,33 +21,33 @@ from collections import deque
 
 import segno
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .media import Resolver, _thumb, make_ytmusic, song_to_track, to_track
+from . import cookies as cookiejar
+from . import setup as setupstate
+from .media import COOKIES, PROBE_VIDEO_ID, Resolver, _thumb, make_ytmusic, probe_account, song_to_track, to_track
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("cesura")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # its INFO lines contain signed googlevideo URLs
 
 CONFIG_DIR = os.environ.get("CONFIG_DIR", "/app/config")
-PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")  # invite link / QR; blank = the host page's own address
+ENV_PUBLIC_URL = os.environ.get("PUBLIC_URL", "").strip().rstrip("/")
+
+
+def public_url() -> str:
+    """Invite link / QR base: PUBLIC_URL env wins, then the wizard's choice, else blank (= the host page's address)."""
+    return ENV_PUBLIC_URL or setupstate.load_state().get("public_url", "")
 
 
 def load_host_key() -> str | None:
-    """HOST_KEY from the environment, else config/host_key. None = not set up yet."""
-    key = os.environ.get("HOST_KEY", "").strip()
-    if key:
-        return key
-    try:
-        with open(os.path.join(CONFIG_DIR, "host_key")) as f:
-            return f.read().strip() or None
-    except FileNotFoundError:
-        return None
+    """HOST_KEY from the environment, else config/host_key (written by the setup wizard)."""
+    return os.environ.get("HOST_KEY", "").strip() or setupstate.stored_host_key()
 
 
-HOST_KEY = load_host_key()  # replaced by the setup wizard once it runs
+HOST_KEY = load_host_key()  # updated by the setup wizard
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
 MAX_QUEUE = 100
 ADD_LIMIT, ADD_WINDOW = 10, 60.0  # adds per client IP per window (seconds)
@@ -117,6 +117,8 @@ class Room:
     def status(self) -> str:
         if not self.now:
             return "idle"
+        if resolver.cookie_health() == "missing":
+            return "unlinked"
         if self.loading:
             return "loading"
         if self.user_paused:
@@ -184,7 +186,7 @@ class Room:
         }
         if for_host:
             s["code"] = self.code
-            s["public_url"] = PUBLIC_URL
+            s["public_url"] = public_url()
             s["host"] = self.host_panel()
         return s
 
@@ -273,6 +275,8 @@ class Room:
 
     async def _prepare(self, item: dict):
         """Get the track into RAM, then let the clock start."""
+        if resolver.cookie_health() == "missing":
+            return  # stays "unlinked"; relinked() picks it up once cookies arrive
         try:
             media, err = await resolver.load(item["videoId"]), None
         except Exception as e:
@@ -296,6 +300,15 @@ class Room:
                 self.loading = False
                 self.sync_clock()
                 self.prefetch_next()
+        await self.broadcast()
+
+    async def relinked(self):
+        """New cookies were saved: start the current song if it was waiting on them."""
+        resolver.bot_check = False
+        async with self.lock:
+            if self.now and self.loading:
+                asyncio.create_task(self._prepare(self.now))
+            self.sync_clock()
         await self.broadcast()
 
     async def refill_auto(self, seed: dict):
@@ -352,18 +365,21 @@ class Room:
 
 # Shown to guests and on the host dashboard when YouTube auth needs attention.
 NOTICES = {
-    "missing": "No YouTube cookies configured. Playback may be limited or fail. The host needs to add config/cookies.txt (see README).",
-    "bot-check": "YouTube is asking for sign-in. The host needs to export fresh cookies to config/cookies.txt (see README).",
+    "missing": "Playback is off until the host links a YouTube Music account.",
+    "bot-check": "YouTube is asking the host to sign in again. Playback may stop until they relink.",
 }
 room = Room()
 fail_log: dict[str, deque] = {}
 search_cache: dict[str, dict] = {}  # videoId -> track, from searches/albums/playlists/radio
 log.info("room code %s", room.code)
-if HOST_KEY is None:
-    log.warning("No host key configured yet. Set HOST_KEY or run first-time setup.")
-if resolver.cookie_health() == "missing":
-    log.warning("No cookies file at %s/cookies.txt. Without a YouTube Music session, streams may be low quality, "
-                "or fail with a bot check. Export cookies as described in the README; no restart needed.", CONFIG_DIR)
+_token = setupstate.setup_token()
+if _token:
+    bar = "=" * 72
+    print(f"\n{bar}\n  cesura is not set up yet.\n\n  Open  /setup  in your browser and enter this one-time setup token:\n\n"
+          f"      {_token}\n\n  Only someone with this token can configure this server. It stops\n"
+          f"  working as soon as setup is finished.\n{bar}\n", flush=True)
+elif resolver.cookie_health() == "missing":
+    log.warning("YouTube is not linked: playback is off. Open /host and use Relink YouTube.")
 
 
 # ------------------------------------------------------------------ helpers
@@ -435,7 +451,16 @@ async def guest_page():
 
 @app.get("/host")
 async def host_page():
+    if not setupstate.is_complete():
+        return RedirectResponse("/setup", status_code=303)
     return FileResponse(os.path.join(STATIC, "host.html"))
+
+
+@app.get("/setup")
+async def setup_page():
+    if setupstate.is_complete():
+        return RedirectResponse("/host", status_code=303)
+    return FileResponse(os.path.join(STATIC, "setup.html"), headers={"Cache-Control": "no-store"})
 
 
 # ------------------------------------------------------------------ guest API
@@ -713,6 +738,118 @@ async def new_session(key: str, request: Request):
     return {"ok": True, "code": room.code}
 
 
+# ------------------------------------------------------------------ setup wizard + YouTube linking
+# Credentials travel in headers (X-Setup-Token / X-Host-Key), never in URLs,
+# so they can't end up in access logs or browser history.
+
+def require_setup_token(request: Request):
+    if setupstate.is_complete():
+        raise HTTPException(410, "Setup is already complete.")
+    status = check_secret(request.headers.get("x-setup-token", ""), setupstate.setup_token(), client_ip(request))
+    if status:
+        raise HTTPException(status, "Too many attempts. Try again later." if status == 429 else "That setup token isn't right. Copy it from the container logs.")
+
+
+def require_linker(request: Request):
+    """Cookie upload/probe: the setup token during setup, the host key afterwards."""
+    key = request.headers.get("x-host-key")
+    if key is not None:
+        status = check_secret(key, HOST_KEY, client_ip(request))
+        if status:
+            raise HTTPException(status, "Too many attempts." if status == 429 else "Bad host key.")
+        return
+    require_setup_token(request)
+
+
+class SetupKeyBody(BaseModel):
+    regenerate: bool = False
+
+
+class SetupUrlBody(BaseModel):
+    url: str
+
+
+@app.post("/api/setup/verify")
+async def setup_verify(request: Request):
+    require_setup_token(request)
+    host = request.headers.get("host", "")
+    return {
+        "host_key": "env" if os.environ.get("HOST_KEY", "").strip() else "stored" if setupstate.stored_host_key() else None,
+        "public_url": public_url(),
+        "public_url_env": bool(ENV_PUBLIC_URL),
+        "suggested_url": f"{request.url.scheme}://{host}" if host else "",
+        "cookies": resolver.cookie_health(),
+        "probe_video": PROBE_VIDEO_ID,
+    }
+
+
+@app.post("/api/setup/host-key")
+async def setup_host_key(body: SetupKeyBody, request: Request):
+    """Generate the host key and return it this once. Later calls only say it exists."""
+    global HOST_KEY
+    require_setup_token(request)
+    if os.environ.get("HOST_KEY", "").strip():
+        return {"source": "env"}
+    if setupstate.stored_host_key() and not body.regenerate:
+        return {"source": "stored"}
+    HOST_KEY = setupstate.new_host_key()
+    log.info("setup: host key generated and saved")
+    return {"source": "generated", "key": HOST_KEY}
+
+
+@app.post("/api/setup/public-url")
+async def setup_public_url(body: SetupUrlBody, request: Request):
+    require_setup_token(request)
+    try:
+        url = setupstate.check_public_url(body.url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    state = setupstate.load_state()
+    state["public_url"] = url
+    setupstate.save_state(state)
+    return {"public_url": url, "overridden_by_env": bool(ENV_PUBLIC_URL)}
+
+
+@app.post("/api/setup/finish")
+async def setup_finish(request: Request):
+    require_setup_token(request)
+    if not HOST_KEY:
+        raise HTTPException(409, "Create the host key first.")
+    setupstate.finish()
+    log.info("setup: complete; the setup token is now invalid")
+    await room.broadcast()
+    return {"ok": True, "redirect": "/host"}
+
+
+@app.post("/api/youtube/cookies")
+async def youtube_cookies(request: Request):
+    """Upload cookies.txt as the raw request body (max 256 KB). Returns counts only."""
+    require_linker(request)
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > cookiejar.MAX_UPLOAD:
+            break
+    try:
+        counts = await asyncio.to_thread(cookiejar.ingest, bytes(data), COOKIES)
+    except cookiejar.Rejected as e:
+        log.info("cookie upload rejected (%d bytes)", len(data))
+        raise HTTPException(413 if len(data) > cookiejar.MAX_UPLOAD else 400, str(e))
+    log.info("cookies saved: %d YouTube cookies, %d from other sites dropped", counts["youtube_cookies"], counts["dropped_other_sites"])
+    await room.relinked()
+    return {"ok": True, **counts}
+
+
+@app.post("/api/youtube/probe")
+async def youtube_probe(request: Request):
+    """Check the saved cookies against YouTube: account, Premium, 256k AAC."""
+    require_linker(request)
+    res = await asyncio.to_thread(probe_account)
+    resolver.bot_check = res["problem"] == "bot-check"
+    await room.broadcast()
+    return res
+
+
 # ------------------------------------------------------------------ audio
 
 @app.get("/stream/{video_id}")
@@ -723,6 +860,8 @@ async def stream(video_id: str, request: Request, code: str):
     expire, so listeners can't fetch them directly.
     """
     require_code(request, code)
+    if resolver.cookie_health() == "missing":
+        raise HTTPException(409, "YouTube is not linked")
     if not room.now or room.now["videoId"] != video_id:
         raise HTTPException(409, "not the current track")
     try:

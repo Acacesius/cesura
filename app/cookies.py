@@ -94,3 +94,80 @@ def write_back(tmp: str, path: str) -> bool:
             return False  # removed meanwhile (e.g. unlinked by the host): don't resurrect it
         write_atomic(path, data)
     return True
+
+
+# ---- uploads (setup wizard / relink)
+
+MAX_UPLOAD = 256 * 1024
+KEEP_DOMAINS = ("youtube.com", "google.com")  # everything else in an export is dropped
+
+
+class Rejected(Exception):
+    """Upload refused. The message is fixed text written here: safe to show, never contains file content."""
+
+
+def _domain_ok(domain: str, suffixes=KEEP_DOMAINS) -> bool:
+    d = domain.lstrip(".").lower()
+    return any(d == s or d.endswith("." + s) for s in suffixes)
+
+
+def ingest(data: bytes, dest: str) -> dict:
+    """Validate an uploaded cookies.txt, keep only YouTube/Google cookies, save atomically (600).
+
+    Returns counts only. Python's cookie parser puts the offending *line* in its
+    exception text, so parser errors are replaced with fixed messages here and
+    never chained (`from None`) into anything that could be logged.
+    """
+    if len(data) > MAX_UPLOAD:
+        raise Rejected("That file is larger than 256 KB, which is too big for a cookies.txt export. Export again with the extension.")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise Rejected("That isn't a text file. Export cookies.txt with the extension.") from None
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if not first:
+        raise Rejected("That file is empty.")
+    if first.startswith(("[", "{")):
+        raise Rejected("That's a JSON export. In the extension, choose the Netscape (cookies.txt) format and export again.")
+    if first not in ("# Netscape HTTP Cookie File", "# HTTP Cookie File"):
+        raise Rejected("That isn't a Netscape cookies.txt file (the first line should be '# Netscape HTTP Cookie File').")
+
+    fd, raw = tempfile.mkstemp(prefix="upload-", suffix=".txt")
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+    out = None
+    try:
+        try:
+            jar = parse(raw)
+        except Exception:
+            raise Rejected("Couldn't read that cookies file. Export it again with the extension.") from None
+        cookies = list(jar)
+        kept = [c for c in cookies if _domain_ok(c.domain)]
+        if not any(_domain_ok(c.domain, ("youtube.com",)) for c in kept):
+            raise Rejected("No YouTube cookies in that file. Export while on a youtube.com page, signed in.")
+        clean = YoutubeDLCookieJar()
+        for c in kept:
+            clean.set_cookie(c)
+        if not has_session(clean):
+            raise Rejected("Signed out: this export has no YouTube Music session. Sign in at music.youtube.com in a private window, then export again (close the window without logging out).")
+        fd, out = tempfile.mkstemp(prefix="clean-", suffix=".txt")
+        os.close(fd)
+        clean.save(out, ignore_discard=True, ignore_expires=True)
+        with open(out, "rb") as f:
+            cleaned = f.read()
+        with LOCK:
+            write_atomic(dest, cleaned)
+        return {"youtube_cookies": len(youtube_names(clean)), "kept": len(kept), "dropped_other_sites": len(cookies) - len(kept)}
+    finally:
+        for p in (raw, out):
+            if p:
+                try:
+                    os.unlink(p)
+                except FileNotFoundError:
+                    pass
+
+
+def cookie_header(jar) -> str:
+    """Cookie header for youtube.com requests. In-memory use only; never log or return it."""
+    return "; ".join(f"{c.name}={c.value}" for c in jar if _domain_ok(c.domain, ("youtube.com",)))

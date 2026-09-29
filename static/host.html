@@ -12,7 +12,7 @@
 <body>
 <div class="host">
   <header>
-    <div class="left"><span class="wordmark">cesura</span><span class="host-tag">HOST</span></div>
+    <div class="left"><span class="wordmark">cesura<svg viewBox="0 0 12 20" aria-hidden="true"><path d="M2 17L6 3"/><path d="M6.5 17L10.5 3"/></svg></span><span class="host-tag">HOST</span></div>
     <div class="mid">
       <span class="pill" id="p-live"></span>
       <span class="pill" id="p-clock"></span>
@@ -30,6 +30,13 @@
   </header>
 
   <div id="notice" class="notice hidden" role="alert"></div>
+  <form id="keygate" class="card hidden" style="max-width:460px;margin:48px auto;padding:24px" autocomplete="off">
+    <div style="font-size:20px;font-weight:700">Enter your host key</div>
+    <p class="muted" style="font-size:14px;margin:6px 0 16px">It was shown once during setup. This browser will remember it.</p>
+    <input id="keygate-in" class="textin mono" style="width:100%" aria-label="Host key" spellcheck="false" autocapitalize="off">
+    <button class="btn amber" style="width:100%;margin-top:12px;height:48px">Open dashboard</button>
+    <div id="keygate-err" class="err" style="color:var(--amber);font-size:14px;margin-top:8px"></div>
+  </form>
   <main>
     <div class="col">
       <section class="card" aria-label="Now playing">
