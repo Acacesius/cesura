@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F1012">
+<title>cesura</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M13 7 9 25M23 7l-4 18' stroke='%23F4B544' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/cesura.css">
+</head>
+<body>
+
+<!-- Join -->
+<form id="join" class="join" autocomplete="off" novalidate>
+  <header><span class="wordmark">cesura</span></header>
+  <div class="kicker">YOU'RE INVITED</div>
+  <h1>Join the room</h1>
+  <p class="lead">Enter the 5-letter code from the host's screen.</p>
+  <div class="field" style="margin-top:36px">
+    <span class="label" id="code-label">Room code</span>
+    <div class="codeboxes" id="codeboxes" role="group" aria-labelledby="code-label"></div>
+  </div>
+  <label class="field" style="margin-top:22px">
+    <span class="label">Your name</span>
+    <input id="name-input" class="textin" placeholder="Shown to the room" maxlength="24" autocomplete="nickname">
+  </label>
+  <button class="go" id="join-btn">Join<span id="join-arrow" style="display:contents"></span></button>
+  <div id="join-err" class="err" role="alert"></div>
+  <div class="notes">
+    <div><span id="note-1" style="display:contents"></span><span>Everyone hears the same song at the same moment, on their own phone. No account needed.</span></div>
+    <div><span id="note-2" style="display:contents"></span><span>Keep cesura on screen while you listen. Locked iPhones can miss the next song.</span></div>
+  </div>
+</form>
+
+<!-- Room -->
+<div id="room" class="app hidden">
+  <div id="notice" class="notice hidden" role="alert"></div>
+  <!-- Playing -->
+  <header data-for="playing">
+    <span class="wordmark">cesura</span>
+    <div class="right"><span class="pill code-chip" data-code></span><span data-people></span></div>
+  </header>
+  <section id="v-playing" class="view np-view" data-view="playing" aria-label="Now playing">
+    <div class="np-art" id="np-art"></div>
+    <h1 class="np-title ellip" id="np-title">Nothing playing yet</h1>
+    <p class="np-sub ellip" id="np-sub">Add a song to get the room going</p>
+    <div class="progress">
+      <div class="track-bar" id="np-bar"><div class="done"></div><div class="knob"></div><div class="rest"></div></div>
+      <div class="times"><span id="np-pos">0:00</span><span id="np-left">-0:00</span></div>
+    </div>
+    <div class="controls">
+      <button class="round" id="to-queue" aria-label="Open queue"></button>
+      <button class="big" id="pause" aria-label="Pause for everyone" disabled></button>
+      <button class="round" id="skip" aria-label="Vote to skip" disabled></button>
+    </div>
+    <div class="syncpill" id="sync" role="status"></div>
+    <button class="syncpill hidden" id="unlock">Tap to start audio on this device</button>
+    <div class="volume" id="volume">
+      <button id="mute" aria-label="Mute"></button>
+      <input id="vol" type="range" min="0" max="100" value="80" aria-label="Volume on this device">
+    </div>
+    <button class="upnext hidden" id="upnext" aria-label="Open queue"></button>
+  </section>
+
+  <!-- Queue -->
+  <header data-for="queue" class="hidden">
+    <h1>Queue</h1>
+    <div class="right"><span class="pill code-chip" data-code></span><span class="pill" id="q-count"></span></div>
+  </header>
+  <section class="view hidden" data-view="queue" aria-label="Queue">
+    <button class="fake-search" id="q-search"></button>
+    <button class="mini hidden" id="q-now" aria-label="Open now playing"></button>
+    <div class="qhead" id="q-head"></div>
+    <div class="rows" id="queue"></div>
+    <div id="radio-block">
+      <div class="radiohead"><span id="radio-ic" style="display:contents"></span><b>Autoplay radio</b><span id="radio-sub">after the queue</span></div>
+      <div class="rows" id="auto"></div>
+    </div>
+    <div id="played-block" class="hidden">
+      <div class="qhead">Recently played</div>
+      <div class="rows" id="played"></div>
+    </div>
+  </section>
+
+  <!-- Search -->
+  <header data-for="search" class="search-head hidden">
+    <form id="search-form" class="searchfield" role="search" autocomplete="off">
+      <span id="s-ic" style="display:contents"></span>
+      <input id="q" type="search" placeholder="Songs, albums, playlists or a link" enterkeyhint="search" aria-label="Search songs, albums and playlists">
+      <button type="button" class="clear hidden" id="q-clear" aria-label="Clear search"></button>
+    </form>
+  </header>
+  <section class="view hidden" data-view="search" aria-label="Search">
+    <div id="s-results-view">
+      <div class="chips" role="group" aria-label="Filter">
+        <button class="chip" data-kind="all" aria-pressed="true">All</button>
+        <button class="chip" data-kind="songs" aria-pressed="false">Songs</button>
+        <button class="chip" data-kind="albums" aria-pressed="false">Albums</button>
+        <button class="chip" data-kind="playlists" aria-pressed="false">Playlists</button>
+      </div>
+      <div id="results"></div>
+    </div>
+    <div id="s-coll-view" class="hidden">
+      <button class="btn fill" id="coll-back" style="margin-top:4px"></button>
+      <div class="coll-head">
+        <img id="coll-art" alt="">
+        <div class="grow"><div class="t" id="coll-title"></div><div class="muted" id="coll-sub" style="font-size:13px;margin-top:4px"></div></div>
+      </div>
+      <button class="btn amber" id="coll-add" style="width:100%;margin-top:14px;height:50px;border-radius:14px"></button>
+      <div class="rows" id="coll-tracks" style="margin-top:6px"></div>
+    </div>
+  </section>
+
+  <nav class="tabbar" aria-label="Sections">
+    <button data-tab="playing" aria-current="page"><span data-ic="playing" style="display:contents"></span>Playing</button>
+    <button data-tab="queue"><span data-ic="queue" style="display:contents"></span>Queue</button>
+    <button data-tab="search"><span data-ic="search" style="display:contents"></span>Search</button>
+  </nav>
+</div>
+
+<audio id="audio" preload="auto"></audio>
+<div id="toast" class="toast hidden" role="status"></div>
+<script src="/static/common.js"></script>
+<script src="/static/guest.js"></script>
+</body>
+</html>

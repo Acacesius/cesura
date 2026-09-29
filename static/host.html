@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0F1012">
+<title>cesura · host</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M13 7 9 25M23 7l-4 18' stroke='%23F4B544' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/cesura.css">
+</head>
+<body>
+<div class="host">
+  <header>
+    <div class="left"><span class="wordmark">cesura</span><span class="host-tag">HOST</span></div>
+    <div class="mid">
+      <span class="pill" id="p-live"></span>
+      <span class="pill" id="p-clock"></span>
+      <span class="pill session">Session <b id="p-session">0:00:00</b></span>
+    </div>
+    <div class="actions">
+      <button class="btn fill" id="copy-link"></button>
+      <button class="btn" id="new-session"></button>
+      <button class="iconbtn" id="settings" aria-label="Settings" aria-expanded="false" style="border-radius:12px"></button>
+    </div>
+    <div class="popover hidden" id="settings-pop" role="menu">
+      <button role="menuitem" id="pop-radio"></button>
+      <a role="menuitem" id="pop-guest" target="_blank" rel="noopener"></a>
+    </div>
+  </header>
+
+  <div id="notice" class="notice hidden" role="alert"></div>
+  <main>
+    <div class="col">
+      <section class="card" aria-label="Now playing">
+        <div class="card-head"><span class="label">Now playing</span><span id="np-by" class="faint" style="display:flex;align-items:center;gap:8px;font-size:13px"></span></div>
+        <div class="np-art" id="np-art"></div>
+        <h1 class="np-title ellip" id="np-title">Nothing playing yet</h1>
+        <p class="np-sub ellip" id="np-sub"></p>
+        <div class="progress">
+          <div class="track-bar" id="np-bar"><div class="done"></div><div class="knob"></div><div class="rest"></div></div>
+          <div class="times"><span id="np-pos">0:00</span><span id="np-dur">0:00</span></div>
+        </div>
+        <div class="controls">
+          <button class="radio-pill" id="radio-toggle" aria-pressed="true"></button>
+          <button class="big" id="pause" aria-label="Pause for everyone"></button>
+          <button class="round" id="skip" aria-label="Skip song"></button>
+        </div>
+      </section>
+      <section class="card stats" aria-label="Session stats">
+        <div><b id="st-played">0</b><span>songs played</span></div>
+        <div><b id="st-drift">–</b><span>median drift</span></div>
+        <div><b id="st-peak">0</b><span>peak listeners</span></div>
+      </section>
+    </div>
+
+    <div class="col center">
+      <section class="card" aria-label="Up next" style="padding:20px 24px 12px">
+        <h2>Up next</h2>
+        <div class="sub" id="q-sub"></div>
+        <div class="addbox">
+          <form class="searchfield" id="add-form" role="search" autocomplete="off">
+            <span id="add-ic" style="display:contents"></span>
+            <input id="add-q" type="search" placeholder="Add songs, albums or playlists" aria-label="Search songs, albums and playlists">
+          </form>
+          <div class="dropdown hidden" id="add-results"></div>
+        </div>
+        <div class="qgrid qhdr" aria-hidden="true"><span></span><span></span><span>TITLE</span><span class="who">ADDED BY</span><span class="time">TIME</span><span></span></div>
+        <div id="queue"></div>
+        <div class="radio-sec">
+          <div class="l"><span id="radio-ic" style="display:contents"></span><div><div style="font-size:15px;font-weight:700">Autoplay radio</div><div class="sub" id="radio-sub"></div></div></div>
+          <button class="btn" id="radio-btn"></button>
+        </div>
+        <div id="auto" style="margin-top:6px"></div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="card" aria-label="Room code">
+        <div class="card-head" style="margin:0"><span class="label">Room code</span><span class="faint" style="font-size:12px">changes on New session</span></div>
+        <div class="codebox" id="codebox"></div>
+        <div class="joinrow">
+          <img id="qr" alt="QR code to join">
+          <div style="min-width:0">
+            <div style="font-size:14px;font-weight:600">Scan to join</div>
+            <div class="mono muted ellip" style="font-size:12px;margin-top:4px" id="join-url"></div>
+            <div class="faint" style="font-size:12px;margin-top:4px">The code unlocks search, queue and audio.</div>
+          </div>
+        </div>
+      </section>
+      <section class="card" aria-label="Listening">
+        <div class="card-head" style="margin-bottom:8px"><span style="font-size:16px;font-weight:700">Listening <span class="mono muted" style="font-weight:500" id="l-count">0</span></span><span class="label" style="letter-spacing:.12em">Drift</span></div>
+        <div id="listeners"></div>
+      </section>
+      <section class="card" aria-label="Engine">
+        <div style="font-size:16px;font-weight:700;margin-bottom:8px">Engine</div>
+        <div class="erow"><span>Stream</span><span class="v" id="e-stream">–</span></div>
+        <div class="erow"><span>Next song</span><span class="v" id="e-next">–</span></div>
+        <div class="erow"><span>YouTube cookies</span><span class="v" id="e-cookies">–</span></div>
+        <div class="erow"><span>Wrong codes, 10 min</span><span class="v" id="e-wrong">–</span></div>
+      </section>
+    </div>
+  </main>
+</div>
+<div id="toast" class="toast hidden" role="status"></div>
+<script src="/static/common.js"></script>
+<script src="/static/host.js"></script>
+</body>
+</html>
