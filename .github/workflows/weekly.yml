@@ -1,0 +1,45 @@
+# Weekly: rebuild with the newest yt-dlp / yt-dlp-ejs / ytmusicapi (YouTube breaks
+# older ones), smoke-test, and publish :latest only if the smoke test passes.
+# The bumped pins are not committed; tagged releases keep the pins in the repo.
+name: weekly-rebuild
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name (GHCR needs lowercase)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cesura" >> "$GITHUB_ENV"
+      - name: Bump yt-dlp, yt-dlp-ejs, ytmusicapi to latest
+        run: scripts/bump-deps.sh && git diff --stat requirements.txt
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build amd64 for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          pull: true
+          tags: cesura:ci
+      - name: Smoke test (publishing is skipped if this fails)
+        run: python3 tests/smoke.py --image cesura:ci
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push :latest (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          push: true
+          tags: ${{ env.IMAGE }}:latest

@@ -1,137 +1,186 @@
 # cesura
 
-A self-hosted, listen-along music room in the style of Spotify Jam, backed by **your own YouTube Music account**.
+**A self-hosted listen-along room for YouTube Music.** Friends join from their phones with a 5-letter code and hear the same song at the same moment on their own devices. Everyone can queue, pause for the room and vote to skip. You run it on your own server, with your own YouTube Music account.
 
-Everyone joins from their phone with a 5-letter room code and hears the same song at the same moment on their own device. Anyone in the room can search, queue songs, pause for everyone and vote to skip. The host gets a desktop dashboard with the queue, the listeners and how in phase each one is, plus engine health.
+<!-- Screenshot placeholder: add docs/screenshot.png (phone "Now playing" + host dashboard) and replace this comment. -->
+*Screenshot coming soon.*
 
-- One container: FastAPI + uvicorn, [ytmusicapi](https://github.com/sigma67/ytmusicapi), [yt-dlp](https://github.com/yt-dlp/yt-dlp) + Deno.
-- No database and no accounts. State lives in memory; only `config/` persists.
-- Plain HTML/JS frontend, no build step. Fonts are bundled (OFL), and there are no third-party requests except YouTube album art.
+> [!WARNING]
+> **Unofficial APIs, your account, your risk.** cesura talks to YouTube Music through unofficial, reverse-engineered interfaces ([ytmusicapi](https://github.com/sigma67/ytmusicapi), [yt-dlp](https://github.com/yt-dlp/yt-dlp)) using **your own** signed-in session. It is not affiliated with or endorsed by Google or YouTube, and using it may violate [YouTube's Terms of Service](https://www.youtube.com/t/terms). Your account could be rate-limited or restricted. Use it at your own risk, and keep rooms to people you know.
+>
+> **Never share your cookies or your cookie file.** It is a login to your Google account.
 
-> **Unofficial APIs, your account, your risk.** cesura uses unofficial, reverse-engineered YouTube Music interfaces (ytmusicapi, yt-dlp) with *your* logged-in session. This is not affiliated with or endorsed by Google or YouTube, and it may violate YouTube's Terms of Service. Your account could be rate-limited or restricted. Things will break whenever YouTube changes something. Use at your own risk, and keep rooms to people you know.
+## What it is
 
-## Requirements
+- **Listen-along, not remote control.** Every phone plays the audio itself. The server keeps one clock, and each phone steers its player to match it, typically to within tens of milliseconds of each other.
+- **For guests:** join with the code and a name, then search songs, albums and playlists (or paste a YouTube link), queue or play next, pause for everyone, and vote to skip. Lock-screen controls work, and there's a per-device volume.
+- **For the host:** a desktop dashboard with the queue (drag to reorder), autoplay radio, room code + QR, every listener with their live drift, and engine health (stream quality, prefetch, YouTube link state).
+- **One container, no database, no accounts.** Everything lives in memory except `config/`. There's a first-run setup wizard, prebuilt images for amd64 and arm64, and a weekly rebuild with the latest yt-dlp.
 
-- Docker with the Compose plugin (`docker compose version`), on Linux, macOS or WSL2.
-- A YouTube Music account. Premium gets 256 kbps AAC; free accounts and no cookies get lower quality, if YouTube serves anything at all.
-- A way for guests to reach the server over HTTPS: a reverse proxy, a tunnel, or Tailscale (see [Exposing it](#exposing-it)). Plain http on a LAN works too, but phones only allow screen wake lock on HTTPS.
+## Quick start
 
-## Setup
+You need Docker with the Compose plugin, and a YouTube Music account. Premium gets 256k AAC; without it, 128k.
 
 ```sh
-git clone <this repo> cesura && cd cesura
-cp .env.example .env          # optional, every setting has a default
-docker compose up -d --build
-docker compose logs cesura       # shows the generated host key and the room code
+mkdir -p cesura/config && cd cesura
+curl -fsSLO https://raw.githubusercontent.com/acacesius/cesura/main/docker-compose.yml
+docker compose up -d && docker compose logs cesura
 ```
 
-On first start with no `HOST_KEY` set, cesura generates one, saves it to `config/host_key` and prints it once:
+The logs show a box with your **one-time setup token**:
 
 ```
-  cesura host key: q3J...xyz
-  (saved to /config/host_key)
-  Open /host?key=q3J...xyz
+========================================================================
+  cesura is not set up yet.
+
+  Open  /setup  in your browser and enter this one-time setup token:
+
+      pX3...Qa9
+
+  Only someone with this token can configure this server. It stops
+  working as soon as setup is finished.
+========================================================================
 ```
 
-- **Host dashboard:** `http://127.0.0.1:8765/host?key=<host key>`. It shows the room code, QR code, queue, listeners and engine status.
-- **Guests:** open `/`, enter the code and a name, and tap **Join**. That tap also unlocks audio on phones.
+Open `http://127.0.0.1:8765/setup` on the same machine, or through the address you expose it on (see [Exposing it](#exposing-it)). Then paste the token. Lost it? Run `docker compose logs cesura` again: it's printed on every start until setup is done.
 
-The room code changes on every restart and whenever the host presses **New session**, which also clears the queue and disconnects anyone on the old code.
+> Create `config/` **before** the first `up` (the first command above does). If Docker creates it, it's owned by root, and cesura will print how to fix it.
 
-### Configuration (`.env`)
+## The setup wizard
+
+The setup token keeps strangers from claiming a fresh instance: nothing can be configured without it, and it stops working once setup is finished.
+
+1. **Host key.** Generated for you and shown **once**. Save it in a password manager; it opens the host dashboard. Setting `HOST_KEY` in `.env` overrides it.
+2. **Public address.** The URL guests will use, for the invite link and QR code. It must be `https://` unless it's localhost. `PUBLIC_URL` in `.env` overrides it.
+3. **Link YouTube Music.** Upload a cookies.txt export (guide below). cesura checks it against YouTube right away and tells you what it found, e.g. *"Premium detected · 256k AAC"*, or what to fix. You can skip this step, but playback stays off, and the dashboard shows **YouTube not linked** until you link it.
+4. **Done.** You land on the host dashboard at `/host`.
+
+## Linking YouTube Music
+
+cesura streams through your own YouTube Music session, as a `cookies.txt` exported from a **private window**. A normal window keeps using and rotating the same cookies, which breaks the export quickly. A private window that you close right after exporting doesn't.
+
+1. **Install an open-source exporter:**
+   - **[Get cookies.txt LOCALLY](https://github.com/kairi003/Get-cookies.txt-LOCALLY)**: [Chrome / Edge / Brave](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc), [Firefox](https://addons.mozilla.org/firefox/addon/get-cookies-txt-locally/)
+   - or, on Firefox, **[cookies.txt](https://github.com/hrdl-github/cookies-txt)**: [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/cookies-txt/)
+
+   ⚠️ Avoid **"Get cookies.txt"** (without "LOCALLY"). It was reported as malware and removed from the Chrome Web Store.
+2. **Allow it in private windows.** In Chrome: extension *Details* → **Allow in Incognito**. In Firefox: *Manage extension* → **Run in Private Windows** → Allow.
+3. **Open a private (incognito) window** and sign in at [music.youtube.com](https://music.youtube.com).
+4. **In the same tab, open `https://www.youtube.com/robots.txt`.** It's a plain page, so YouTube can't rotate your cookies while you export.
+5. **Export cookies.txt** from the extension, in Netscape format. Extra sites in the file are fine: cesura keeps only YouTube and Google cookies and drops the rest.
+6. **Close the private window. Don't log out**; logging out ends the session you just exported.
+7. **Upload the file** in the wizard, or later from the host dashboard (**Relink YouTube**). Then delete your downloaded copy.
+
+What cesura does with the file:
+- It accepts only a Netscape cookies.txt up to 256 KB that contains a signed-in session.
+- It stores the file as `config/cookies.txt`, readable only by the app (mode 600).
+- It never logs, displays or returns cookie values.
+- When YouTube rotates cookies during normal use, cesura saves the refreshed ones, but only if the session is still signed in.
+
+The link check reports three things:
+- **Account:** YouTube Music confirms the session is signed in.
+- **256k AAC:** YouTube offers format 141 for a test song (`PROBE_VIDEO_ID`, default: Queen – *Bohemian Rhapsody*).
+- **Premium:** inferred from 256k AAC being available. YouTube has no direct "Premium" flag.
+
+When the link stops working (YouTube's bot check, or the session got signed out), the dashboard shows **YouTube link expired** with a **Relink YouTube** button. Relinking is the same upload and check as in setup.
+
+## Configuration
+
+Put these in a `.env` file next to `docker-compose.yml` (copy [`.env.example`](.env.example)). All are optional.
 
 | Variable | Default | What it does |
 |---|---|---|
 | `PORT` | `8765` | Port published on the host. |
-| `BIND` | `127.0.0.1` | Interface the port is published on. Docker bypasses host firewalls such as UFW, so this is your exposure control. Use `0.0.0.0` only if you mean it. |
-| `PUBLIC_URL` | *(blank)* | Public base URL used for the invite link and QR code, e.g. `https://cesura.example.com`. Blank = the address the host dashboard was opened on. |
-| `TRUSTED_PROXY_CIDR` | `172.16.0.0/12` | `X-Forwarded-For` is only trusted from this network, which is your reverse proxy as seen from the container. Rate limits and lockouts are per client IP. |
-| `HOST_KEY` | *(generated)* | Key for `/host`. Blank = generate once and save to `config/host_key`. |
-| `CESURA_UID` / `CESURA_GID` | `1000` | User the container runs as. It needs write access to `./config`. |
-| `YTM_CLIENT_ID` / `YTM_CLIENT_SECRET` | *(blank)* | Only for ytmusicapi OAuth (optional, below). |
-
-If `config/` isn't writable by `CESURA_UID`, the generated key can't be saved. It would then change on every restart, so either `chown` the folder or set `HOST_KEY`.
-
-## YouTube cookies (for yt-dlp)
-
-Streams are resolved with yt-dlp using your YouTube Music session, exported as a Netscape-format `cookies.txt`. Without it, cesura still starts, but shows a "No YouTube cookies" notice to the host and guests, and playback may be low quality or blocked by YouTube's bot check.
-
-**Export them from a private window**, so your normal browser session doesn't rotate the cookies out from under you:
-
-1. Open a **private/incognito window** and sign in at https://music.youtube.com.
-2. In that same window, export cookies for `youtube.com` in Netscape format with a cookies.txt extension. Firefox has "cookies.txt"; Chrome has "Get cookies.txt LOCALLY". Only use well-reviewed extensions, since this is your Google session.
-3. **Close the private window right away and don't reuse it.** A session kept open in a browser gets its cookies rotated within hours; a closed one keeps working much longer.
-4. Save the file as `config/cookies.txt` and restrict it: `chmod 600 config/cookies.txt`.
-
-No restart is needed; the file is read on every lookup. The dashboard's **Engine** card shows the cookie state: *Valid*, *Missing*, or *Bot check, re-export*. Check the stream line: `itag 141` means Premium 256k AAC.
-
-Treat `cookies.txt` like a password. It is excluded from git by `.gitignore`.
-
-### Optional: ytmusicapi auth
-
-Search, albums, playlists and autoplay radio all work unauthenticated. Auth only personalises radio picks.
-
-- **Browser headers:** `docker compose run --rm --entrypoint ytmusicapi cesura browser --file /config/browser.json`, then paste the request headers from a `music.youtube.com` `/browse` request (DevTools → Network).
-- **OAuth:** needs your own Google Cloud OAuth client ("TVs and Limited Input devices"). Run `docker compose run --rm --entrypoint ytmusicapi cesura oauth --file /config/oauth.json --client-id … --client-secret …`, and set `YTM_CLIENT_ID` / `YTM_CLIENT_SECRET` in `.env`.
-
-Restart after adding either file.
+| `BIND` | `127.0.0.1` | Interface the port is published on. Docker bypasses host firewalls such as UFW, so this is your real exposure control. Keep `127.0.0.1` and put a reverse proxy or tunnel in front. |
+| `PUBLIC_URL` | *(from setup)* | Base URL for the invite link and QR code. Overrides the wizard's value. |
+| `TRUSTED_PROXY_CIDR` | `172.16.0.0/12` | `X-Forwarded-For` is trusted only from this network (your proxy, as the container sees it). Rate limits and lockouts are per client IP. |
+| `HOST_KEY` | *(from setup)* | Host dashboard key. Overrides the wizard's key. |
+| `PROBE_VIDEO_ID` | `BSTsnWoslP4` | Song used by the link check. Change it if that one is unavailable where you are. |
+| `CESURA_UID` / `CESURA_GID` | `1000` | User the container runs as. It must own `./config`. |
+| `YTM_CLIENT_ID` / `YTM_CLIENT_SECRET` | | Only for optional ytmusicapi OAuth (personalised radio). Not needed. |
 
 ## Exposing it
 
-cesura listens on `127.0.0.1:8765` by default. Put something in front of it that terminates HTTPS and passes websockets:
+cesura listens on `127.0.0.1:8765`. Put something in front that terminates HTTPS and passes websockets, then set the public address in setup (or `PUBLIC_URL`).
 
-- **Reverse proxy** (Caddy, nginx, Traefik) on the same machine. Example Caddyfile:
-  ```
-  cesura.example.com {
-      reverse_proxy 127.0.0.1:8765
-  }
-  ```
-  Then set `PUBLIC_URL=https://cesura.example.com`. If the proxy runs in Docker on a custom network, set `TRUSTED_PROXY_CIDR` to that network.
-- **Tunnel** (Cloudflare Tunnel, ngrok, and similar): point it at `http://127.0.0.1:8765` and set `PUBLIC_URL` to the tunnel's address.
-- **Tailscale.** `tailscale serve` shares it with your tailnet only; Funnel makes it public:
-  ```sh
-  tailscale serve status                                   # look at what's already configured first
-  sudo tailscale serve  --bg --https=8765 http://127.0.0.1:8765   # tailnet only
-  sudo tailscale funnel --bg --https=8443 http://127.0.0.1:8765   # public internet (Funnel: 443, 8443 or 10000)
-  ```
-  Your HTTPS name is shown by `tailscale serve status`. Set `PUBLIC_URL` to it, including the port.
+**Reverse proxy** on the same machine, e.g. Caddy:
 
-  ⚠️ **Never run `tailscale serve --https=<port> off`** to remove an entry. On some versions it wipes **all** serve/Funnel config on the machine, not just that port. Save `tailscale serve status --json` before making changes, so you can recreate anything that gets lost.
-
-While public, cesura's protection is:
-- every guest action (including fetching audio) needs the current room code;
-- `/host` needs the host key;
-- each IP gets 10 wrong codes/keys per 10 minutes before a 429 lockout;
-- `/add` is rate-limited to 10 per IP per minute.
-
-Rotate the code with **New session** after a party.
-
-## Updating yt-dlp / ytmusicapi
-
-YouTube changes break these regularly. Versions are pinned in `requirements.txt`. To bump yt-dlp, yt-dlp-ejs and ytmusicapi to their latest releases and rebuild (also pulling newer Python/Deno base images):
-
-```sh
-./update.sh
+```
+cesura.example.com {
+    reverse_proxy 127.0.0.1:8765
+}
 ```
 
-Run it when you see `could not load`, `Requested format is not available`, or every song being skipped. To roll back, restore the previous pins and run `docker compose up -d --build`.
+If your proxy runs in Docker on its own network, set `TRUSTED_PROXY_CIDR` to that network.
 
-## How it works (short version)
+**Tunnel** (Cloudflare Tunnel, ngrok and similar): point it at `http://127.0.0.1:8765` and use the tunnel's HTTPS address as the public URL.
 
-- **Server-owned clock.** For the current song the server stores `started_at` (server time at position 0), or a frozen position while paused, loading or when nobody is listening. It ends songs on its own timer.
-- **Sync.** Each phone measures its clock offset with ping/pong (lowest round-trip wins). Every 500 ms it compares `audio.currentTime` with where the song should be. More than 1 s off → seek; 60 ms–1 s → nudge `playbackRate` to 0.95/1.05, which is inaudible. Phones typically land within tens of ms of each other. They report their drift to the host dashboard, for display only.
-- **Streams.** yt-dlp resolves each song once, running YouTube's player JS in Deno. The resolved googlevideo URLs are signed for the server's IP and expire, so cesura downloads the song into memory once and serves every listener from there, with HTTP Range support. The next song is prefetched.
-- **Autoplay radio.** When the queue runs out, cesura seeds YouTube Music's "up next" radio from the last song. The host can turn it off.
+**Tailscale.** `serve` shares it inside your tailnet; `funnel` makes it public (Funnel allows ports 443, 8443 and 10000):
+
+```sh
+tailscale serve status --json > serve-backup.json                 # save what's there first
+sudo tailscale serve  --bg --https=8765 http://127.0.0.1:8765     # tailnet only
+sudo tailscale funnel --bg --https=8443 http://127.0.0.1:8765     # public internet
+```
+
+> [!CAUTION]
+> **Never run `tailscale serve --https=<port> off`** to remove an entry. On some versions it wipes **all** serve and Funnel configuration on the machine, not just that port. Keep the backup from above so you can recreate anything that gets lost.
+
+While exposed:
+- guests need the current room code for everything, including audio;
+- the dashboard needs the host key;
+- each IP gets 10 wrong codes or keys per 10 minutes before a lockout;
+- adds are rate-limited.
+
+Press **New session** after a party to rotate the code.
+
+## Updating
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+- **`:latest`** is rebuilt **weekly** with the newest yt-dlp, yt-dlp-ejs and ytmusicapi, and only published if its smoke tests pass. YouTube changes break these libraries regularly, so pulling is usually the fix.
+- **Versioned tags** (`:0.1.0`, …) are published for each release, if you want to pin one.
+- **Source installs** (`docker-compose.dev.yml`): run `./update.sh`. It bumps those three libraries to their latest releases, rebuilds, restarts and runs the self-test.
+
+To check a running install: `docker compose exec cesura python -m app.selftest`
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| **"YouTube link expired"** on the dashboard | Export fresh cookies from a *new* private window (guide above) and use **Relink YouTube**. |
+| **Bot check**: "Sign in to confirm you're not a bot" in the logs, or the link check says so | Same as above. Datacenter/VPS IPs get this far more often than home connections. |
+| Everything skips, `could not load` in the logs, `Requested format is not available` | Update: `docker compose pull && docker compose up -d` (source installs: `./update.sh`). |
+| Link check: "Signed in · no Premium detected · 128k AAC" | Works, but at 128k. Export from the account that has Premium. |
+| "config is not writable" box in the logs | `sudo chown -R 1000:1000 ./config`, or set `CESURA_UID`/`CESURA_GID` to the owner of `./config`. |
+| Lost the setup token | `docker compose logs cesura`. It's reprinted on every start until setup finishes. |
+| Lost the host key | Stop the container, delete `config/host_key` and `config/setup.json`, and start again. A new setup token is printed; your cookies stay linked. |
+| Phones play but drift | Check the Listening card. "Catching up" should settle within seconds. Very slow networks may need a moment after seeks. |
 
 ## Known limits
 
-- **Locked phones.** iPhones especially may finish the current song but not start the next one when the screen is locked. Keep cesura on screen; over HTTPS it holds a wake lock.
-- **iOS volume.** Web pages can't set volume on iOS, so the slider is hidden there.
-- **Open control.** Anyone with the room code can pause for everyone, add songs and vote to skip.
-- **One room per instance.** State is in memory, so a restart ends the session.
-- **Memory.** Songs are cached in RAM (about 4 at a time). Tracks over 150 MB are proxied per request instead.
-- **Fragility.** Everything depends on unofficial YouTube interfaces. Expect breakage, then run `./update.sh`.
+- **Locked iPhones.** iOS may finish the current song but not start the next one while the screen is locked. Keep cesura on screen; over HTTPS it holds a wake lock.
+- **iOS volume.** Web pages can't set volume on iOS, so the slider is hidden there; use the hardware buttons.
+- **Open controls.** Anyone with the room code can queue, pause for everyone and vote to skip.
+- **One room per instance.** State is in memory: a restart ends the session and changes the code.
+- **Unofficial APIs.** It breaks when YouTube changes things; update, and relink when asked.
+
+## Development
+
+```sh
+git clone https://github.com/acacesius/cesura && cd cesura
+mkdir -p config
+docker compose -f docker-compose.dev.yml up -d --build
+python3 tests/smoke.py --image cesura:dev     # the same smoke test CI runs before publishing
+```
+
+- **Server:** FastAPI + uvicorn in `app/`.
+- **Frontend:** plain HTML/JS in `static/`, with no build step.
+- **Streams:** resolved once by yt-dlp (running YouTube's player JS in Deno), held in memory, and served to every listener with HTTP Range support.
+- **Sync:** each phone measures its clock offset to the server with ping/pong. It seeks when it's more than 1 s off, and nudges `playbackRate` by ±5% (inaudible) for smaller drift.
 
 ## License
 
-See [LICENSE](LICENSE). The bundled fonts (Bricolage Grotesque, IBM Plex Mono) are under the SIL Open Font License; see `static/fonts/`.
+MIT. See [LICENSE](LICENSE). The bundled fonts, Bricolage Grotesque and IBM Plex Mono, are under the SIL Open Font License; see `static/fonts/`.

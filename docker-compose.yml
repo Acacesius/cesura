@@ -1,19 +1,23 @@
+# cesura: prebuilt image from GHCR.
+#   Start:   docker compose up -d && docker compose logs cesura   (setup token is in the logs)
+#   Update:  docker compose pull && docker compose up -d
+# Settings come from .env next to this file (see .env.example); all are optional.
 services:
   cesura:
-    build: .
-    image: cesura:local
+    image: ghcr.io/acacesius/cesura:latest
     restart: unless-stopped
     # Must be able to write ./config (host key, setup state, cookies.txt).
     user: "${CESURA_UID:-1000}:${CESURA_GID:-1000}"
     environment:
-      HOST_KEY: ${HOST_KEY:-}
       PUBLIC_URL: ${PUBLIC_URL:-}
+      HOST_KEY: ${HOST_KEY:-}
       TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-172.16.0.0/12}
+      PROBE_VIDEO_ID: ${PROBE_VIDEO_ID:-}
       YTM_CLIENT_ID: ${YTM_CLIENT_ID:-}
       YTM_CLIENT_SECRET: ${YTM_CLIENT_SECRET:-}
     ports:
-      # Docker publishes ports around host firewalls such as UFW, so BIND is
-      # the real exposure control. Keep 127.0.0.1 behind a reverse proxy/tunnel.
+      # Docker publishes ports around host firewalls such as UFW, so BIND is the
+      # real exposure control. Keep 127.0.0.1 and put a reverse proxy/tunnel in front.
       - "${BIND:-127.0.0.1}:${PORT:-8765}:8765"
     volumes:
       - ./config:/app/config

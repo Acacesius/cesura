@@ -372,7 +372,27 @@ room = Room()
 fail_log: dict[str, deque] = {}
 search_cache: dict[str, dict] = {}  # videoId -> track, from searches/albums/playlists/radio
 log.info("room code %s", room.code)
-_token = setupstate.setup_token()
+def _config_writable() -> bool:
+    try:
+        probe = os.path.join(CONFIG_DIR, ".write-test")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.unlink(probe)
+        return True
+    except OSError:
+        return False
+
+
+if not _config_writable():
+    bar = "!" * 72
+    print(f"\n{bar}\n  {CONFIG_DIR} is not writable by this container (uid {os.getuid()}).\n"
+          "  cesura stores its setup, host key and cookies there. Fix one of:\n"
+          f"    sudo chown -R {os.getuid()}:{os.getgid()} ./config\n"
+          "    or set CESURA_UID / CESURA_GID in .env to the owner of ./config\n"
+          f"{bar}\n", flush=True)
+    _token = None
+else:
+    _token = setupstate.setup_token()
 if _token:
     bar = "=" * 72
     print(f"\n{bar}\n  cesura is not set up yet.\n\n  Open  /setup  in your browser and enter this one-time setup token:\n\n"
@@ -447,6 +467,12 @@ def rate_limited(ip: str) -> bool:
 @app.get("/")
 async def guest_page():
     return FileResponse(os.path.join(STATIC, "guest.html"))
+
+
+@app.get("/healthz")
+async def healthz():
+    """Container healthcheck: the web server is up. No auth, no state, no secrets."""
+    return {"ok": True, "setup_complete": setupstate.is_complete(), "youtube": resolver.cookie_health()}
 
 
 @app.get("/host")
