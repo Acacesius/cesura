@@ -366,7 +366,7 @@ class Room:
 # Shown to guests and on the host dashboard when YouTube auth needs attention.
 NOTICES = {
     "missing": "Playback is off until the host links a YouTube Music account.",
-    "bot-check": "YouTube is asking the host to sign in again. Playback may stop until they relink.",
+    "expired": "The host's YouTube link has expired. Playback may stop until they relink it.",
 }
 room = Room()
 fail_log: dict[str, deque] = {}
@@ -378,7 +378,7 @@ if _token:
     print(f"\n{bar}\n  cesura is not set up yet.\n\n  Open  /setup  in your browser and enter this one-time setup token:\n\n"
           f"      {_token}\n\n  Only someone with this token can configure this server. It stops\n"
           f"  working as soon as setup is finished.\n{bar}\n", flush=True)
-elif resolver.cookie_health() == "missing":
+elif resolver.cookie_health() == "missing":  # (expired can only be known after a lookup)
     log.warning("YouTube is not linked: playback is off. Open /host and use Relink YouTube.")
 
 
@@ -845,7 +845,7 @@ async def youtube_probe(request: Request):
     """Check the saved cookies against YouTube: account, Premium, 256k AAC."""
     require_linker(request)
     res = await asyncio.to_thread(probe_account)
-    resolver.bot_check = res["problem"] == "bot-check"
+    resolver.bot_check = res["problem"] in ("bot-check", "signed-out")  # -> "expired"
     await room.broadcast()
     return res
 

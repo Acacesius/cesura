@@ -163,13 +163,16 @@ class Resolver:
         self.locks: dict[str, asyncio.Lock] = {}
         self.http = httpx.AsyncClient(timeout=httpx.Timeout(15, read=30), follow_redirects=True)
         self.media: OrderedDict[str, asyncio.Task] = OrderedDict()
-        self.bot_check = False  # last resolve hit YouTube's "Sign in to confirm you're not a bot"
+        # Cookies stopped working: a lookup hit YouTube's "Sign in to confirm you're
+        # not a bot", or the link probe found the session signed out. Cleared by a new upload.
+        self.bot_check = False
 
     # ---- engine status for the host dashboard
     def cookie_health(self) -> str:
+        """missing / valid / expired."""
         if not os.path.exists(COOKIES):
             return "missing"
-        return "bot-check" if self.bot_check else "ok"
+        return "expired" if self.bot_check else "valid"
 
     def stream_format(self, video_id: str) -> str | None:
         r = self.cache.get(video_id)

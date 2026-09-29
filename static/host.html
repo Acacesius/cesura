@@ -24,12 +24,16 @@
       <button class="iconbtn" id="settings" aria-label="Settings" aria-expanded="false" style="border-radius:12px"></button>
     </div>
     <div class="popover hidden" id="settings-pop" role="menu">
+      <button role="menuitem" id="pop-relink"></button>
       <button role="menuitem" id="pop-radio"></button>
       <a role="menuitem" id="pop-guest" target="_blank" rel="noopener"></a>
     </div>
   </header>
 
-  <div id="notice" class="notice hidden" role="alert"></div>
+  <div id="relink-banner" class="relink hidden" role="alert">
+    <span class="dot warn"></span><div class="grow"><b id="relink-title"></b> <span id="relink-sub" class="muted"></span></div>
+    <button class="btn amber" id="relink-open">Relink YouTube</button>
+  </div>
   <form id="keygate" class="card hidden" style="max-width:460px;margin:48px auto;padding:24px" autocomplete="off">
     <div style="font-size:20px;font-weight:700">Enter your host key</div>
     <p class="muted" style="font-size:14px;margin:6px 0 16px">It was shown once during setup. This browser will remember it.</p>
@@ -109,8 +113,16 @@
     </div>
   </main>
 </div>
+<div id="relink-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="relink-h">
+  <div class="modal-card">
+    <div class="modal-head"><h2 id="relink-h">Relink YouTube Music</h2><button class="iconbtn bare" id="relink-close" aria-label="Close"></button></div>
+    <p class="muted" style="font-size:14px;margin:4px 0 18px">Upload a fresh cookies.txt. The file is a login to your Google account: never share it, and delete your copy after uploading.</p>
+    <div id="relink-linker"></div>
+  </div>
+</div>
 <div id="toast" class="toast hidden" role="status"></div>
 <script src="/static/common.js"></script>
+<script src="/static/link.js"></script>
 <script src="/static/host.js"></script>
 </body>
 </html>

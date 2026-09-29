@@ -26,8 +26,11 @@ function apply(s) {
   state = s;
   clockOffset = s.server_time - Date.now() / 1000;
   const h = s.host, n = s.now;
-  $("notice").textContent = s.notice || "";
-  $("notice").classList.toggle("hidden", !s.notice);
+  // YouTube link state: a persistent Relink banner unless the cookies are valid.
+  const ck = h.engine.cookies;
+  $("relink-banner").classList.toggle("hidden", ck === "valid");
+  $("relink-title").textContent = ck === "missing" ? "YouTube not linked." : "YouTube link expired.";
+  $("relink-sub").textContent = ck === "missing" ? "Playback is off until you link a YouTube Music account." : "YouTube asked for a sign-in check. Playback may stop until you relink.";
 
   // top bar
   $("p-live").replaceChildren(el("span", { class: "dot" }), `Live · ${s.listening} listening`);
@@ -77,7 +80,7 @@ function apply(s) {
   const NEXT = { cached: ["Prefetched", "ok"], resolving: ["Fetching…", ""], failed: ["Failed", "bad"], idle: ["–", ""] };
   const [nt, nc] = NEXT[e.next] || [e.next, ""];
   $("e-next").textContent = nt; $("e-next").className = `v ${nc}`;
-  const CK = { ok: ["Valid", "ok"], "bot-check": ["Bot check, re-export", "bad"], missing: ["Missing", "bad"] };
+  const CK = { valid: ["Valid", "ok"], expired: ["Expired", "bad"], missing: ["Not linked", "bad"] };
   const [ct, cc] = CK[e.cookies] || [e.cookies, ""];
   $("e-cookies").textContent = ct; $("e-cookies").className = `v ${cc}`;
   $("e-wrong").textContent = `${e.wrong_codes} / ${e.wrong_code_limit}`;
@@ -160,6 +163,23 @@ $("settings").addEventListener("click", (e) => {
 });
 document.addEventListener("click", () => { $("settings-pop").classList.add("hidden"); $("settings").setAttribute("aria-expanded", "false"); });
 $("pop-radio").addEventListener("click", toggleRadio);
+
+// ---- Relink YouTube: the same upload + probe flow as setup, authorised by the host key
+function openRelink() {
+  $("relink-modal").classList.remove("hidden");
+  mountLinker($("relink-linker"), { headers: () => ({ "X-Host-Key": key }), onChange: (res) => {
+    if (res && res.account) toast(res.premium ? "YouTube linked · Premium" : "YouTube linked");
+  } });
+  $("relink-close").focus();
+}
+const closeRelink = () => $("relink-modal").classList.add("hidden");
+$("relink-open").addEventListener("click", openRelink);
+$("pop-relink").addEventListener("click", openRelink);
+$("relink-close").innerHTML = icon("x");
+$("relink-close").addEventListener("click", closeRelink);
+$("relink-modal").addEventListener("click", (e) => e.target.id === "relink-modal" && closeRelink());
+document.addEventListener("keydown", (e) => e.key === "Escape" && closeRelink());
+$("pop-relink").replaceChildren(ic("upload"), "Relink YouTube");
 $("pop-guest").replaceChildren(ic("external"), "Open guest view");
 $("add-ic").innerHTML = icon("search");
 $("radio-ic").innerHTML = icon("radio");
