@@ -2,8 +2,19 @@
 
 **A self-hosted listen-along room for YouTube Music.** Friends join from their phones with a 5-letter code and hear the same song at the same moment on their own devices. Everyone can queue, pause for the room and vote to skip. You run it on your own server, with your own YouTube Music account.
 
-<!-- Screenshot placeholder: add docs/screenshot.png (phone "Now playing" + host dashboard) and replace this comment. -->
-*Screenshot coming soon.*
+<p align="center">
+  <img src="docs/screenshots/guest-now-playing.png" width="320" alt="Now playing on a phone: the song, progress, pause for everyone, vote to skip, and the sync status reading In phase">
+</p>
+
+![Host dashboard: now playing, the queue with who added each song, autoplay radio, room code and QR, every listener with their drift, and engine health](docs/screenshots/host.png)
+
+<p>
+  <img src="docs/screenshots/guest-join.png" width="32%" alt="Join: the 5-letter room code and your name">
+  <img src="docs/screenshots/guest-queue.png" width="32%" alt="Queue: now playing, up next with who added each song, then autoplay radio">
+  <img src="docs/screenshots/guest-search.png" width="32%" alt="Search: songs, albums and playlists; a queued song shows QUEUED">
+</p>
+
+*Screenshots use test tones, made-up names and no album art; the room code and address are placeholders.*
 
 > [!WARNING]
 > **Unofficial APIs, your account, your risk.** cesura talks to YouTube Music through unofficial, reverse-engineered interfaces ([ytmusicapi](https://github.com/sigma67/ytmusicapi), [yt-dlp](https://github.com/yt-dlp/yt-dlp)) using **your own** signed-in session. It is not affiliated with or endorsed by Google or YouTube, and using it may violate [YouTube's Terms of Service](https://www.youtube.com/t/terms). Your account could be rate-limited or restricted. Use it at your own risk, and keep rooms to people you know.
