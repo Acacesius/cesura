@@ -1,0 +1,3 @@
+# Tests: python -m pytest tests/ (needs ffmpeg on PATH for the pocket tests)
+-r requirements.txt
+pytest
