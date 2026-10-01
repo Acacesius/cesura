@@ -7,7 +7,7 @@
 <title>cesura · host</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M13 7 9 25M23 7l-4 18' stroke='%23F4B544' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/cesura.css">
+<link rel="stylesheet" href="/static/cesura.css?v=0.2.0">
 </head>
 <body>
 <div class="host">
@@ -23,12 +23,18 @@
       <button class="btn" id="new-session"></button>
       <button class="iconbtn" id="settings" aria-label="Settings" aria-expanded="false" style="border-radius:12px"></button>
     </div>
-    <div class="popover hidden" id="settings-pop" role="menu">
+    <div class="popover hidden" id="settings-pop" role="menu" style="width:300px">
+      <button role="menuitemcheckbox" id="pop-library" aria-pressed="false"></button>
+      <button role="menuitemcheckbox" id="pop-radio"></button>
+      <div class="seg"><span class="label">Vote to skip needs</span><div class="chips" id="pop-votes" role="group" aria-label="Votes needed to skip"></div></div>
+      <div class="sep"></div>
+      <button role="menuitem" id="pop-export"></button>
+      <button role="menuitem" id="pop-health"></button>
       <button role="menuitem" id="pop-relink"></button>
-      <button role="menuitem" id="pop-radio"></button>
       <a role="menuitem" id="pop-guest" target="_blank" rel="noopener"></a>
     </div>
   </header>
+  <div id="conn" class="notice conn hidden" role="status" aria-live="polite"></div>
 
   <div id="relink-banner" class="relink hidden" role="alert">
     <span class="dot warn"></span><div class="grow"><b id="relink-title"></b> <span id="relink-sub" class="muted"></span></div>
@@ -63,6 +69,10 @@
         <div><b id="st-drift">–</b><span>median drift</span></div>
         <div><b id="st-peak">0</b><span>peak listeners</span></div>
       </section>
+      <section class="card" aria-label="Recent actions">
+        <div class="card-head" style="margin-bottom:6px"><span style="font-size:16px;font-weight:700">Hands on it</span><span class="label">Recent</span></div>
+        <div class="feed" id="feed"></div>
+      </section>
     </div>
 
     <div class="col center">
@@ -88,8 +98,9 @@
 
     <div class="col">
       <section class="card" aria-label="Room code">
-        <div class="card-head" style="margin:0"><span class="label">Room code</span><span class="faint" style="font-size:12px">changes on New session</span></div>
+        <div class="card-head" style="margin:0"><span class="label">Room code</span><span class="faint" style="font-size:12px" id="lock-state"></span></div>
         <div class="codebox" id="codebox"></div>
+        <div class="code-note hidden" id="code-note">NEW CODE · LISTENERS STAYED CONNECTED</div>
         <div class="joinrow">
           <img id="qr" alt="QR code to join">
           <div style="min-width:0">
@@ -97,6 +108,10 @@
             <div class="mono muted ellip" style="font-size:12px;margin-top:4px" id="join-url"></div>
             <div class="faint" style="font-size:12px;margin-top:4px">The code unlocks search, queue and audio.</div>
           </div>
+        </div>
+        <div class="room-actions">
+          <button class="btn" id="rotate-code"></button>
+          <button class="btn" id="lock-room" aria-pressed="false"></button>
         </div>
       </section>
       <section class="card" aria-label="Listening">
@@ -107,7 +122,10 @@
         <div style="font-size:16px;font-weight:700;margin-bottom:8px">Engine</div>
         <div class="erow"><span>Stream</span><span class="v" id="e-stream">–</span></div>
         <div class="erow"><span>Next song</span><span class="v" id="e-next">–</span></div>
-        <div class="erow"><span>YouTube cookies</span><span class="v" id="e-cookies">–</span></div>
+        <div class="erow"><span>YouTube link</span><span class="v" id="e-cookies">–</span></div>
+        <div class="erow"><span>Premium · 256k</span><span class="v" id="e-premium">–</span></div>
+        <div class="erow"><span>Soonest cookie expiry</span><span class="v" id="e-expiry">–</span></div>
+        <div class="erow"><span>Pocket stream</span><span class="v" id="e-pocket">–</span></div>
         <div class="erow"><span>Wrong codes, 10 min</span><span class="v" id="e-wrong">–</span></div>
       </section>
     </div>
@@ -120,9 +138,16 @@
     <div id="relink-linker"></div>
   </div>
 </div>
+<div id="export-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="export-h">
+  <div class="sheet-card">
+    <div class="modal-head"><h2 id="export-h">Saved to YouTube Music</h2><button class="iconbtn bare" data-close aria-label="Close"></button></div>
+    <p class="muted" style="font-size:14px;margin:6px 0 0" id="export-sub"></p>
+    <a class="export-link" id="export-link" target="_blank" rel="noopener noreferrer"></a>
+  </div>
+</div>
 <div id="toast" class="toast hidden" role="status"></div>
-<script src="/static/common.js"></script>
-<script src="/static/link.js"></script>
-<script src="/static/host.js"></script>
+<script src="/static/common.js?v=0.2.0"></script>
+<script src="/static/link.js?v=0.2.0"></script>
+<script src="/static/host.js?v=0.2.0"></script>
 </body>
 </html>
