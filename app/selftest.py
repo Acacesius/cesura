@@ -1,6 +1,7 @@
 """Smoke test run inside the image (CI, and `docker compose exec cesura python -m app.selftest`).
 
 Checks that the pieces YouTube keeps breaking still work, without any cookies:
+  0. Deno (yt-dlp's JS runtime) and ffmpeg (pocket mode) are installed;
   1. ytmusicapi search returns songs;
   2. yt-dlp (with Deno + yt-dlp-ejs) can resolve an audio format for PROBE_VIDEO_ID.
 Datacenter IPs (e.g. CI runners) often get YouTube's bot check instead of a stream.
@@ -20,7 +21,7 @@ from .media import FORMAT, PROBE_VIDEO_ID
 
 
 def main() -> int:
-    out = {"deno": bool(shutil.which("deno")), "search": False, "stream": "fail", "detail": None}
+    out = {"deno": bool(shutil.which("deno")), "ffmpeg": bool(shutil.which("ffmpeg")), "search": False, "stream": "fail", "detail": None}
     try:
         out["deno_version"] = subprocess.run(["deno", "--version"], capture_output=True, text=True, timeout=30).stdout.split()[1]
     except Exception:
@@ -41,7 +42,7 @@ def main() -> int:
             out["detail"] = "YouTube bot check from this IP (expected on CI runners)"
         else:
             out["detail"] = f"stream: {type(e).__name__}: {msg[:300]}"
-    ok = out["deno"] and out["search"] and out["stream"] in ("ok", "inconclusive")
+    ok = out["deno"] and out["ffmpeg"] and out["search"] and out["stream"] in ("ok", "inconclusive")
     out["result"] = "pass" if ok else "fail"
     print(json.dumps(out))
     return 0 if ok else 1

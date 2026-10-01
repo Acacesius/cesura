@@ -85,7 +85,7 @@ def main() -> int:
             res = json.loads(st.stdout.strip().splitlines()[-1])
         except (IndexError, ValueError):
             res = {"result": "fail", "detail": st.stderr[-300:]}
-        check("selftest: deno + ytmusicapi + yt-dlp", res.get("result") == "pass",
+        check("selftest: deno + ffmpeg + ytmusicapi + yt-dlp", res.get("result") == "pass",
               f"stream={res.get('stream')} search={res.get('search')} {res.get('detail') or ''}".strip())
     finally:
         sh("docker", "rm", "-f", name, check=False)

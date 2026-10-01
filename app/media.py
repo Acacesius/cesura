@@ -57,6 +57,17 @@ def make_ytmusic() -> YTMusic:
     return YTMusic()
 
 
+def cookie_ytmusic(path: str = COOKIES) -> YTMusic:
+    """ytmusicapi signed in as the host, from cookies.txt. Read-only: ytmusicapi never writes the file.
+
+    For the host's own library and the session export. Search and browsing use
+    the shared client from make_ytmusic(), so guests' lookups never run as the host.
+    """
+    header = cookiejar.cookie_header(cookiejar.parse(path))
+    return YTMusic({"cookie": header, "authorization": "SAPISIDHASH 0_placeholder",  # ytmusicapi recomputes the real hash from the cookie
+                    "x-goog-authuser": "0", "origin": "https://music.youtube.com"})
+
+
 def _thumb(thumbs) -> str | None:
     if not thumbs:
         return None
@@ -305,10 +316,7 @@ def probe_account() -> dict:
         return res
     try:
         try:
-            header = cookiejar.cookie_header(cookiejar.parse(tmp))
-            yt = YTMusic({"cookie": header, "authorization": "SAPISIDHASH 0_placeholder",  # ytmusicapi recomputes the real hash from the cookie
-                          "x-goog-authuser": "0", "origin": "https://music.youtube.com"})
-            info = yt.get_account_info()
+            info = cookie_ytmusic(tmp).get_account_info()
             res["account"] = True
             res["name"] = (info.get("accountName") or "")[:80] or None
         except Exception as e:

@@ -171,3 +171,19 @@ def ingest(data: bytes, dest: str) -> dict:
 def cookie_header(jar) -> str:
     """Cookie header for youtube.com requests. In-memory use only; never log or return it."""
     return "; ".join(f"{c.name}={c.value}" for c in jar if _domain_ok(c.domain, ("youtube.com",)))
+
+
+# Persistent cookies that carry the signed-in session. When the soonest of
+# these expires, the link stops working regardless of rotation.
+AUTH_COOKIES = (ACCOUNT_COOKIE, *SAPISID_FAMILY, "APISID", "HSID", "SID", "SSID",
+                "__Secure-1PSID", "__Secure-3PSID")
+
+
+def soonest_auth_expiry(path: str) -> int | None:
+    """Unix time of the earliest-expiring persistent auth cookie, or None. Reads names and dates only."""
+    try:
+        jar = parse(path)
+    except Exception:
+        return None
+    times = [c.expires for c in jar if c.name in AUTH_COOKIES and c.expires and _domain_ok(c.domain)]
+    return int(min(times)) if times else None
