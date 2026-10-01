@@ -1,14 +1,23 @@
 let code = null;
 let state = null;
-let votedQid = null;
-const cid = localStorage.getItem("cesura.cid") || crypto.getRandomValues(new Uint32Array(4)).join("-");
-localStorage.setItem("cesura.cid", cid);
+// Device identity: made up once, kept in localStorage, sent on every connect. The server hands
+// this device a session token on connect; the token authorises audio and actions.
+const newDevice = () => "d-" + [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, "0")).join("");
+let device = localStorage.getItem("cesura.cid");
+if (!device || !/^[A-Za-z0-9_-]{8,64}$/.test(device)) { device = newDevice(); localStorage.setItem("cesura.cid", device); }
+let token = localStorage.getItem("cesura.token") || "";
 let myName = localStorage.getItem("cesura.name") || "";
+const setToken = (t) => { token = t || ""; t ? localStorage.setItem("cesura.token", t) : localStorage.removeItem("cesura.token"); };
 
 async function api(path, body) {
-  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, ...body }) } : {});
-  if (r.status === 403) { leave("That room code is no longer valid."); throw new Error("bad code"); }
-  if (r.status === 429 && path !== "/api/add") { leave("Too many wrong codes from this network. Try again in 10 minutes."); throw new Error("locked"); }
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, token, ...body }) } : {});
+  if (r.status === 403 && !body) { leave("That room code is no longer valid."); throw new Error("bad code"); }
+  if (r.status === 403 && body) {
+    const d = await r.clone().json().catch(() => ({}));
+    if (d.detail === "bad room code") { leave("That room code is no longer valid."); throw new Error("bad code"); }
+  }
+  if (r.status === 401 && live) live.reconnect(); // session expired: get a fresh token
+  if (r.status === 429 && path === "/api/join") { leave("Too many wrong codes from this network. Try again in 10 minutes."); throw new Error("locked"); }
   return r;
 }
 
@@ -53,50 +62,82 @@ $("join").addEventListener("submit", (e) => {
 async function join(c) {
   c = c.trim().toUpperCase();
   if (c.length !== 5) { $("join-err").textContent = "Enter all 5 letters of the code."; return; }
-  const r = await fetch("/api/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: c }) });
-  if (!r.ok) { $("join-err").textContent = r.status === 429 ? "Too many wrong codes. Try again in 10 minutes." : "No room with that code."; return; }
-  code = c;
-  localStorage.setItem("cesura.code", code);
+  const r = await fetch("/api/join", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: c, device }) });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    $("join-err").textContent = r.status === 429 ? "Too many wrong codes. Try again in 10 minutes." : r.status === 409 ? d.detail : "No room with that code.";
+    return;
+  }
+  setCode(c);
   history.replaceState(null, "", "/");
   $("join").classList.add("hidden");
   $("room").classList.remove("hidden");
-  document.querySelectorAll("[data-code]").forEach((n) => (n.textContent = code));
   connect();
+}
+function setCode(c) {
+  code = c;
+  localStorage.setItem("cesura.code", code);
+  document.querySelectorAll("[data-code]").forEach((n) => (n.textContent = code));
 }
 
 function leave(msg) {
   code = null;
   localStorage.removeItem("cesura.code");
+  setPocket(false, { quiet: true });
   setListening(false);
-  if (ws) { ws.onclose = null; ws.close(); ws = null; }
+  if (live) { live.stop(); live = null; }
   $("room").classList.add("hidden");
   $("join").classList.remove("hidden");
   $("join-err").textContent = msg || "";
 }
 
-// ---- live state over websocket
-let ws = null;
-const send = (m) => ws && ws.readyState === 1 && ws.send(JSON.stringify(m));
+// ---- live state over websocket (reconnects with backoff and shows a banner meanwhile)
+let live = null;
+const send = (m) => live && live.send(m);
+const LEAVE = {
+  4001: "The host started a new session. Get the new code from the host's screen.",
+  4004: "The host removed you from the room. You can rejoin with the code.",
+  4005: "The host removed you from this room.",
+  4006: "This room is locked. Ask the host to unlock it.",
+  4029: "Too many wrong codes. Try again in 10 minutes.",
+};
 
 function connect() {
-  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?code=${encodeURIComponent(code)}&cid=${encodeURIComponent(cid)}`);
-  ws.onopen = () => {
-    bestRtt = Infinity;
-    for (let i = 0; i < 5; i++) setTimeout(ping, i * 300);
-    send({ type: "hello", name: myName });
-    if (listening) send({ type: "listen", on: true });
-  };
-  ws.onmessage = (e) => {
-    const m = JSON.parse(e.data);
-    if (m.type === "state") render(m);
-    else if (m.type === "pong") onPong(m);
-  };
-  ws.onclose = (e) => {
-    ws = null;
-    if (e.code === 4001) return leave("The host started a new session. Get the new code from the host's screen.");
-    if (e.code === 4029) return leave("Too many wrong codes. Try again in 10 minutes.");
-    setTimeout(() => code && connect(), 2000);
-  };
+  if (live) live.stop();
+  live = liveSocket({
+    banner: $("conn"),
+    open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?code=${encodeURIComponent(code)}&device=${encodeURIComponent(device)}&token=${encodeURIComponent(token)}`),
+    onOpen: () => {
+      bestRtt = Infinity;
+      for (let i = 0; i < 5; i++) setTimeout(ping, i * 300);
+      send({ type: "hello", name: myName });
+      if (listening) send({ type: "listen", on: true });
+      if (pocket) send({ type: "pocket", on: true });
+    },
+    onMessage: (m) => {
+      if (m.type === "state") render(m);
+      else if (m.type === "pong") onPong(m);
+      else if (m.type === "hb") send({ type: "hb" });
+      else if (m.type === "welcome") { setToken(m.token); if (m.code !== code) setCode(m.code); }
+      else if (m.type === "code") onNewCode(m.code);
+    },
+    onClose: (e) => {
+      if (e.code === 4009) { device = newDevice(); localStorage.setItem("cesura.cid", device); setToken(""); return false; }
+      if (LEAVE[e.code]) {
+        if (e.code !== 4029) setToken("");
+        leave(LEAVE[e.code]);
+        return true;
+      }
+      return false;
+    },
+  });
+}
+
+// The host changed the room code. We stay in; re-point audio at URLs with the new code.
+function onNewCode(c) {
+  setCode(c);
+  if (!pocket) loadedQid = null; // steer() reloads the stream URL and seeks back to the clock
+  toast(`New room code: ${c}`);
 }
 
 // ---- clock sync
@@ -119,34 +160,46 @@ function show(tab) {
   document.querySelectorAll("#room > header").forEach((h) => h.classList.toggle("hidden", h.dataset.for !== tab));
   document.querySelectorAll(".tabbar button").forEach((b) => (b.dataset.tab === tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
   if (tab === "search" && !$("q").value) $("q").focus();
+  if (tab === "library") loadLibrary();
 }
 document.querySelectorAll(".tabbar button").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
 document.querySelectorAll("[data-ic]").forEach((n) => (n.innerHTML = icon(n.dataset.ic)));
 
 const queuedIds = () => new Set([...(state ? state.queue : []), ...(state && state.now ? [state.now] : [])].map((t) => t.videoId));
 
+const isMod = () => !!(state && state.me && state.me.role === "cohost");
+
 function render(s) {
   if (!state) clockOffset = s.server_time - Date.now() / 1000; // until the first pong
   const trackChanged = !state || (state.now && state.now.qid) !== (s.now && s.now.qid);
+  const libChanged = !state || state.library !== s.library;
   state = s;
   document.querySelectorAll("[data-people]").forEach((n) => n.replaceChildren(avatarStack(s.people)));
   $("notice").textContent = s.notice || "";
   $("notice").classList.toggle("hidden", !s.notice);
+  const mod = isMod();
 
   // Now playing
   const n = s.now;
   if (trackChanged) {
     $("np-art").replaceChildren(n ? art(n, "") : el("div", { class: "art-ph" }));
-    updateMediaSession(s);
+    if (!$("lyrics-sheet").classList.contains("hidden")) showLyrics();
   }
+  setMediaSession(n, mediaHandlers, s.status === "playing");
   $("np-title").textContent = n ? n.title : "Nothing playing yet";
   $("np-sub").textContent = n ? [n.artists, n.mine ? "added by you" : n.by ? `added by ${n.by}` : n.auto ? "from radio" : null].filter(Boolean).join(" · ") : "Add a song to get the room going";
+  $("np-hands").textContent = s.hands ? s.hands.text : "";
+  $("np-hands").classList.toggle("hidden", !s.hands);
   $("pause").disabled = !n || s.status === "loading";
   $("pause").innerHTML = icon(s.status === "paused" ? "play" : "pause");
   $("pause").setAttribute("aria-label", s.status === "paused" ? "Resume for everyone" : "Pause for everyone");
-  $("skip").disabled = !n || votedQid === (n && n.qid);
-  $("skip").replaceChildren(...[ic("skip"), s.votes ? el("span", { class: "count", textContent: `${s.votes}/${s.votes_needed}` }) : null].filter(Boolean));
-  $("skip").setAttribute("aria-label", s.votes ? `Vote to skip, ${s.votes} of ${s.votes_needed}` : "Vote to skip");
+  $("skip").disabled = !n || (!mod && s.voted);
+  const showVotes = !mod && s.votes;
+  $("skip").replaceChildren(...[ic("skip"), showVotes ? el("span", { class: "count", textContent: `${s.votes}/${s.votes_needed}` }) : null].filter(Boolean));
+  $("skip").setAttribute("aria-label", mod ? "Skip song" : s.votes ? `Vote to skip, ${s.votes} of ${s.votes_needed}` : `Vote to skip (${s.votes_needed} vote${s.votes_needed > 1 ? "s" : ""} needed)`);
+  $("skip").title = mod ? "Skip (co-host)" : `Vote to skip · ${s.votes_needed} needed`;
+  $("lyrics-btn").disabled = !n;
+  $("pocket").checked = pocket;
   const nx = s.queue[0] || s.auto[0];
   $("upnext").classList.toggle("hidden", !nx);
   if (nx) $("upnext").replaceChildren(art(nx), el("div", { class: "grow" },
@@ -159,30 +212,40 @@ function render(s) {
   if (n) {
     $("q-now").replaceChildren(
       el("div", { class: "row" }, art(n), el("div", { class: "grow" }, el("div", { class: "k", textContent: s.status === "paused" ? "PAUSED" : "NOW PLAYING" }),
-        el("div", { class: "t ellip", textContent: n.title }), el("div", { class: "s ellip", textContent: n.artists })),
+        el("div", { class: "t ellip", textContent: n.title }), el("div", { class: "s ellip", textContent: [n.artists, n.by ? `added by ${n.mine ? "you" : n.by}` : null].filter(Boolean).join(" · ") })),
         el("span", { class: "mono faint", style: "font-size:12px", id: "q-now-time" })),
       el("div", { class: "thin" }, el("div", { id: "q-now-bar" })));
   }
-  $("q-head").textContent = s.queue.length ? `Up next · ${s.queue.length} song${s.queue.length > 1 ? "s" : ""} · ${totalMin(s.queue)} min` : "Up next";
-  $("queue").replaceChildren(...(s.queue.length ? s.queue.map((t, i) => trow(t, {
-    tag: i === 0 ? el("span", { class: "tag", textContent: "NEXT" }) : null,
-    right: t.mine ? el("button", { class: "iconbtn", html: icon("x"), ariaLabel: `Remove ${t.title}`, onclick: () => removeTrack(t) }) : avatar(t.by || (t.auto ? "Radio" : "?")),
-  })) : [el("div", { class: "empty", textContent: "Nothing queued. Search for something, or let the radio pick." })]));
+  $("q-head").textContent = s.queue.length ? `Up next · ${s.queue.length} song${s.queue.length > 1 ? "s" : ""} · ${totalMin(s.queue)} min${mod ? " · swipe to remove, hold to move" : ""}` : "Up next";
+  const qrows = s.queue.map((t, i) => {
+    const row = trow(t, {
+      tag: i === 0 ? el("span", { class: "tag", textContent: "NEXT" }) : t.pinned ? el("span", { class: "tag amber", textContent: "PINNED" }) : null,
+      right: t.mine || mod ? el("button", { class: "iconbtn", html: icon("x"), ariaLabel: `Remove ${t.title}`, onclick: () => removeTrack(t) }) : avatar(t.by || (t.auto ? "Radio" : "?")),
+      sub: t.by ? `${t.mine ? "you" : t.by}` : null,
+    });
+    row.dataset.qid = t.qid;
+    return row;
+  });
+  $("queue").replaceChildren(...(qrows.length ? qrows : [emptyState("queue", "Nothing queued yet", s.radio ? "Search for something, or let the radio pick." : "Search for a song to get things going.",
+    el("button", { class: "btn fill", textContent: "Search", onclick: () => show("search") }))]));
+  if (mod && qrows.length) touchQueue(qrows, { onRemove: (qid) => removeTrack(s.queue.find((t) => t.qid === qid)), onMove: moveTrack });
   $("radio-block").classList.toggle("hidden", !s.radio && !s.auto.length);
   $("radio-sub").textContent = s.radio ? "after the queue" : "off";
   $("auto").replaceChildren(...s.auto.slice(0, 6).map((t) => trow(t, { weight: 500, right: addBtn(t) })));
   $("played-block").classList.toggle("hidden", !s.played.length);
   $("played").replaceChildren(...s.played.slice(0, 8).map((t) => trow(t, { weight: 500, right: addBtn(t, "replay") })));
 
+  if (!$("people-sheet").classList.contains("hidden")) renderPeople();
+  if (libChanged && !$("lib-list-view").classList.contains("hidden")) renderHostLib();
   refreshQueuedMarks();
   steer();
 }
 
-function trow(t, { tag = null, right = null, weight = 600, extra = null } = {}) {
+function trow(t, { tag = null, right = null, weight = 600, extra = null, sub = null } = {}) {
   return el("div", { class: "trow" }, art(t),
     el("div", { class: "grow" },
       el("div", { style: "display:flex;align-items:center;gap:8px;min-width:0" }, el("span", { class: "t ellip", style: `font-weight:${weight}`, textContent: t.title }), tag),
-      el("div", { class: "s ellip", textContent: [t.artists, t.duration && fmt(t.duration)].filter(Boolean).join(" · ") })),
+      el("div", { class: "s ellip", textContent: [t.artists, t.duration && fmt(t.duration), sub].filter(Boolean).join(" · ") })),
     el("div", { class: "acts" }, extra, right));
 }
 
@@ -259,7 +322,7 @@ $("unlock").addEventListener("click", () => { unlockAudio(); steer(); });
 
 function steer() {
   const s = state;
-  if (!listening || !s) return;
+  if (!listening || !s || pocket) return; // pocket mode: the shared stream, no sync correction
   if (!s.now) {
     loadedQid = null;
     audio.pause();
@@ -267,7 +330,7 @@ function steer() {
   }
   if (s.now.qid !== loadedQid && s.status !== "loading") {
     loadedQid = s.now.qid;
-    audio.src = `/stream/${s.now.videoId}?code=${encodeURIComponent(code)}`;
+    audio.src = `/stream/${s.now.videoId}?code=${encodeURIComponent(code)}&token=${encodeURIComponent(token)}`;
     holdUntil = 0;
   }
   if (loadedQid !== s.now.qid) return;
@@ -304,8 +367,42 @@ function steer() {
 }
 setInterval(steer, 500);
 audio.addEventListener("error", () => {
+  if (pocket) return pocketRetry();
   if (listening && audio.src.includes("/stream/")) loadedQid = null; // retry on next tick
 });
+
+// ---- pocket mode: one shared radio-style stream that keeps playing on a locked phone.
+// No sync correction; it trails the room by a second or two.
+let pocket = false, pocketTimer = null;
+function pocketUrl() { return `/pocket?code=${encodeURIComponent(code)}&token=${encodeURIComponent(token)}`; }
+function setPocket(on, { quiet = false } = {}) {
+  if (pocket === on) return;
+  pocket = on;
+  $("pocket").checked = on;
+  clearTimeout(pocketTimer);
+  send({ type: "pocket", on });
+  if (on) {
+    if (!listening) { listening = true; send({ type: "listen", on: true }); requestWakeLock(); }
+    audio.playbackRate = 1;
+    audio.src = pocketUrl();
+    audio.play().catch(() => {});
+    loadedQid = null;
+    lastDrift = null;
+  } else {
+    audio.pause();
+    audio.removeAttribute("src");
+    loadedQid = null;
+    if (!quiet) steer();
+  }
+  renderSync();
+}
+function pocketRetry() {
+  clearTimeout(pocketTimer);
+  pocketTimer = setTimeout(() => { if (pocket && code) { audio.src = pocketUrl(); audio.play().catch(() => {}); } }, 2000);
+}
+audio.addEventListener("ended", () => pocket && pocketRetry());
+audio.addEventListener("stalled", () => pocket && audio.paused && pocketRetry());
+$("pocket").addEventListener("change", (e) => setPocket(e.target.checked));
 
 // Report the measured drift (display only; the sync loop above is unchanged).
 function reportDrift(drift) {
@@ -324,7 +421,8 @@ function renderSync() {
   pill.classList.toggle("hidden", !listening);
   if (!listening || !s) return;
   let dot = "", text;
-  if (!s.now) text = "Nothing playing";
+  if (pocket) text = s.status === "paused" ? "Pocket mode · paused for everyone" : "Pocket mode · loosely synced";
+  else if (!s.now) text = "Nothing playing";
   else if (s.status === "unlinked") { dot = "warn"; text = "Playback is off: YouTube not linked"; }
   else if (s.status === "loading") { dot = "warn"; text = "Loading the next song"; }
   else if (s.status === "paused") { dot = "warn"; text = "Paused for everyone"; }
@@ -362,20 +460,12 @@ function applyVolume(v, muted) {
 vol.addEventListener("input", () => applyVolume(+vol.value, false));
 $("mute").addEventListener("click", () => applyVolume(+vol.value, !audio.muted));
 
-// ---- lock screen / notification controls
-function updateMediaSession(s) {
-  if (!("mediaSession" in navigator)) return;
-  const n = s.now;
-  navigator.mediaSession.metadata = n ? new MediaMetadata({
-    title: n.title, artist: n.artists, album: n.album || "cesura",
-    artwork: n.thumb ? [{ src: n.thumb, sizes: "400x400" }] : [],
-  }) : null;
-}
-if ("mediaSession" in navigator) {
-  navigator.mediaSession.setActionHandler("play", () => (listening ? setPaused(false) : unlockAudio()));
-  navigator.mediaSession.setActionHandler("pause", () => setPaused(true));
-  navigator.mediaSession.setActionHandler("nexttrack", () => voteSkip());
-}
+// ---- lock screen / notification controls: the normal room commands
+const mediaHandlers = {
+  play: () => (listening ? setPaused(false) : unlockAudio()),
+  pause: () => setPaused(true),
+  next: () => voteSkip(),
+};
 
 // ---- room controls
 async function setPaused(paused) {
@@ -385,10 +475,10 @@ async function setPaused(paused) {
 $("pause").addEventListener("click", () => setPaused(state && state.status !== "paused"));
 
 async function voteSkip() {
-  if (!state || !state.now || votedQid === state.now.qid) return;
-  votedQid = state.now.qid;
+  if (!state || !state.now || (state.voted && !isMod())) return;
   $("skip").disabled = true;
-  await api("/api/skip", { qid: state.now.qid, cid });
+  const r = await api("/api/skip", { qid: state.now.qid });
+  if (r.ok && !isMod()) toast(state.votes + 1 >= state.votes_needed ? "Skipping…" : `Vote counted · ${state.votes + 1} of ${state.votes_needed}`);
 }
 $("skip").addEventListener("click", voteSkip);
 $("to-queue").innerHTML = icon("queue");
@@ -401,7 +491,7 @@ $("radio-ic").innerHTML = icon("radio");
 
 async function addTracks(videoIds, { next = false, btn = null, label = "" } = {}) {
   if (btn) btn.disabled = true;
-  const r = await api("/api/add", { videoIds, cid, name: myName, next });
+  const r = await api("/api/add", { videoIds, next });
   if (r.ok) {
     const { added } = await r.json();
     toast(added > 1 ? `Added ${added} songs` : next ? `${label || "Song"} plays next` : `Added ${label || "song"}`);
@@ -413,8 +503,13 @@ async function addTracks(videoIds, { next = false, btn = null, label = "" } = {}
 }
 
 async function removeTrack(t) {
-  const r = await api("/api/remove", { qid: t.qid, cid });
+  if (!t) return;
+  const r = await api("/api/remove", { qid: t.qid });
   if (r.ok) toast(`Removed ${t.title}`);
+}
+async function moveTrack(qid, index) {
+  const r = await api("/api/mod/move", { qid, index });
+  if (r.ok) toast("Moved and pinned");
 }
 
 // ---- search: all / songs / albums / playlists, or a pasted link
@@ -430,19 +525,18 @@ document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", ()
 }));
 $("search-form").addEventListener("submit", (e) => { e.preventDefault(); runSearch(); });
 
-const info = (text) => el("div", { class: "empty", textContent: text });
 
 async function runSearch() {
   const q = $("q").value.trim();
   if (!q) return;
   $("q").blur(); // drop the phone keyboard so results are visible
   showCollection(false);
-  $("results").replaceChildren(info("Searching…"));
+  $("results").replaceChildren(skeletonRows(6));
   const r = await api(`/api/search?q=${encodeURIComponent(q)}&kind=${kind}&code=${encodeURIComponent(code)}`);
-  if (!r.ok) return $("results").replaceChildren(info("Search failed. Try again."));
+  if (!r.ok) return $("results").replaceChildren(emptyState("search", "Search failed", "Check your connection and try again."));
   const data = await r.json();
   if (data.open) return openCollection(data.open.kind, data.open.id);
-  if (!data.results.length) return $("results").replaceChildren(info("No results."));
+  if (!data.results.length) return $("results").replaceChildren(emptyState("search", `No results for “${q}”`, "Try fewer words, the artist's name, or paste a YouTube link."));
   const songs = data.results.filter((x) => x.kind === "song");
   const albums = data.results.filter((x) => x.kind === "album");
   const lists = data.results.filter((x) => x.kind === "playlist");
@@ -468,13 +562,13 @@ $("coll-back").addEventListener("click", () => showCollection(false));
 async function openCollection(k, id) {
   show("search");
   showCollection(true);
-  $("coll-title").textContent = "Loading…";
-  $("coll-sub").textContent = "";
+  $("coll-title").replaceChildren(el("div", { class: "sk sk-t", style: "width:70%;height:18px" }));
+  $("coll-sub").replaceChildren(el("div", { class: "sk sk-s", style: "width:40%" }));
   $("coll-art").removeAttribute("src");
   $("coll-add").classList.add("hidden");
-  $("coll-tracks").replaceChildren();
+  $("coll-tracks").replaceChildren(skeletonRows(6));
   const r = await api(`/api/collection?kind=${k}&id=${encodeURIComponent(id)}&code=${encodeURIComponent(code)}`);
-  if (!r.ok) { $("coll-title").textContent = `Couldn't open that ${k}.`; return; }
+  if (!r.ok) { $("coll-title").textContent = `Couldn't open that ${k}.`; $("coll-sub").textContent = ""; $("coll-tracks").replaceChildren(); return; }
   const c = await r.json();
   $("coll-title").textContent = c.title;
   $("coll-sub").textContent = c.subtitle;
@@ -485,11 +579,146 @@ async function openCollection(k, id) {
   addAll.disabled = false;
   addAll.replaceChildren(ic("plus"), c.tracks.length > 50 ? "Add first 50 songs" : ids.length === 1 ? "Add 1 song" : `Add all ${ids.length} songs`);
   addAll.onclick = async () => { if (await addTracks(ids)) { addAll.disabled = true; addAll.replaceChildren(ic("check"), "Added to the queue"); } };
-  $("coll-tracks").replaceChildren(...(c.tracks.length ? c.tracks.map(songRow) : [info("This one's empty.")]));
+  $("coll-tracks").replaceChildren(...(c.tracks.length ? c.tracks.map(songRow) : [emptyState("queue", "This one's empty")]));
+}
+
+// ---- lyrics (from YouTube Music; cached on the server per song)
+const lyricsCache = new Map();
+$("lyrics-btn").addEventListener("click", () => { openSheet("lyrics-sheet"); showLyrics(); });
+async function showLyrics() {
+  const n = state && state.now;
+  if (!n) return closeSheet("lyrics-sheet");
+  $("lyrics-h").textContent = n.title;
+  $("lyrics-sub").textContent = n.artists;
+  const body = $("lyrics-body");
+  let got = lyricsCache.get(n.videoId);
+  if (!got) {
+    body.replaceChildren(el("div", { class: "lyr-skel" }, ...[80, 62, 74, 50, 0, 70, 58, 77, 44].map((w) => w ? el("div", { class: "sk sk-t", style: `width:${w}%` }) : el("br"))));
+    const r = await api(`/api/lyrics?videoId=${encodeURIComponent(n.videoId)}&code=${encodeURIComponent(code)}`).catch(() => null);
+    if (!r || !r.ok) return body.replaceChildren(emptyState("lyrics", "Couldn't load lyrics", "Try again in a moment."));
+    got = await r.json();
+    lyricsCache.set(n.videoId, got);
+    if (!state.now || state.now.videoId !== n.videoId) return;
+  }
+  body.replaceChildren(...(got.lyrics
+    ? [el("div", { class: "lyr", textContent: got.lyrics }), got.source ? el("div", { class: "lyr-src", textContent: got.source }) : null].filter(Boolean)
+    : [emptyState("lyrics", "No lyrics for this one", "YouTube Music doesn't have lyrics for this song.")]));
+}
+
+// ---- who's here (co-hosts can remove people)
+document.querySelectorAll("[data-people]").forEach((b) => b.addEventListener("click", () => { renderPeople(); openSheet("people-sheet"); }));
+$("q-count").addEventListener("click", () => { renderPeople(); openSheet("people-sheet"); });
+function renderPeople() {
+  const s = state;
+  if (!s) return;
+  const list = $("people-list");
+  if (s.roster) {
+    const ST = { in_phase: "In phase", catching_up: "Catching up", waiting: "Joining", idle: "Not listening", pocket: "Pocket", away: "Reconnecting" };
+    list.replaceChildren(el("div", { class: "faint", style: "font-size:13px;margin-bottom:6px", textContent: "You're a co-host: you can remove people. They can rejoin with the code." }),
+      ...s.roster.map((l) => el("div", { class: "prow" }, avatar(l.name),
+        el("div", { class: "grow" }, el("div", { class: "n" }, el("span", { class: "ellip", textContent: l.name }),
+          l.role === "cohost" ? el("span", { class: "tag amber", textContent: "CO-HOST" }) : null,
+          l.sockets > 1 ? el("span", { class: "tag", textContent: `×${l.sockets}` }) : null),
+          el("div", { class: "d ellip", textContent: `${l.device} · ${ST[l.status] || l.status}` })),
+        l.pid === s.me.pid || l.role === "cohost" ? null
+          : el("button", { class: "btn", textContent: "Remove", onclick: async () => {
+            if (!confirm(`Remove ${l.name} from the room? They can rejoin with the code.`)) return;
+            const r = await api("/api/mod/kick", { pid: l.pid });
+            toast(r.ok ? `Removed ${l.name}` : "Couldn't remove them");
+          } }))));
+  } else {
+    list.replaceChildren(...s.people.map((n) => el("div", { class: "prow" }, avatar(n), el("div", { class: "grow n", textContent: n }))),
+      el("div", { class: "faint", style: "font-size:13px;margin-top:10px", textContent: `${s.listening} listening now${s.locked ? " · the room is locked" : ""}` }));
+  }
+}
+
+// ---- library: the host's playlists (when shared) + paste a playlist link
+let libLoaded = false, libData = null;
+async function loadLibrary(force = false) {
+  libCollection(false);
+  if (libLoaded && !force) return renderHostLib();
+  libLoaded = true;
+  renderHostLib();
+}
+async function renderHostLib() {
+  const box = $("host-lib");
+  if (!state || !state.library) {
+    libData = null;
+    return box.replaceChildren(el("div", { class: "sechead", textContent: "HOST'S LIBRARY" }),
+      emptyState("library", "The host isn't sharing their library", "Paste a playlist link above, or search for songs."));
+  }
+  if (!libData) {
+    box.replaceChildren(el("div", { class: "sechead", textContent: "HOST'S LIBRARY" }), skeletonRows(5));
+    const r = await api(`/api/library?code=${encodeURIComponent(code)}`).catch(() => null);
+    if (!r || !r.ok) {
+      const d = r ? await r.json().catch(() => ({})) : {};
+      return box.replaceChildren(el("div", { class: "sechead", textContent: "HOST'S LIBRARY" }), emptyState("library", d.detail || "Couldn't load the host's library", "",
+        el("button", { class: "btn fill", textContent: "Try again", onclick: () => { libData = null; renderHostLib(); } })));
+    }
+    libData = await r.json();
+  }
+  const row = (p, iconName) => el("button", { class: "lrow-btn", onclick: () => openLibPlaylist(p.id) },
+    p.thumb ? el("img", { class: "art", src: p.thumb, alt: "", loading: "lazy" }) : el("span", { class: "art art-ic", html: icon(iconName) }),
+    el("div", { class: "grow" }, el("div", { class: "t ellip", textContent: p.title }), p.subtitle ? el("div", { class: "s ellip", textContent: p.subtitle }) : null), ic("chevron"));
+  box.replaceChildren(el("div", { class: "sechead", textContent: "HOST'S LIBRARY" }),
+    el("div", { class: "rows" }, row({ ...libData.liked, subtitle: "Songs the host liked" }, "heart"), ...libData.playlists.map((p) => row(p, "library"))),
+    libData.playlists.length ? null : el("div", { class: "empty", textContent: "No playlists in the host's library." }));
+}
+
+function libCollection(on) {
+  $("lib-coll-view").classList.toggle("hidden", !on);
+  $("lib-list-view").classList.toggle("hidden", on);
+}
+$("lib-back").replaceChildren(ic("back"), "Library");
+$("lib-back").addEventListener("click", () => libCollection(false));
+
+async function openLibPlaylist(id) {
+  await showSheetFrom(api(`/api/library/playlist?id=${encodeURIComponent(id)}&code=${encodeURIComponent(code)}`));
+}
+$("paste-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const url = $("paste-url").value.trim();
+  if (!url) return $("paste-url").focus();
+  $("paste-url").blur();
+  const ok = await showSheetFrom(api(`/api/playlist?url=${encodeURIComponent(url)}&code=${encodeURIComponent(code)}`));
+  if (ok) $("paste-url").value = "";
+});
+
+const shuffled = (a) => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+async function showSheetFrom(request) {
+  libCollection(true);
+  $("lib-title").replaceChildren(el("div", { class: "sk sk-t", style: "width:70%;height:18px" }));
+  $("lib-sub").replaceChildren(el("div", { class: "sk sk-s", style: "width:40%" }));
+  $("lib-art").removeAttribute("src");
+  $("lib-add").classList.add("hidden");
+  $("lib-tracks").replaceChildren(skeletonRows(7));
+  const r = await request.catch(() => null);
+  if (!r || !r.ok) {
+    const d = r ? await r.json().catch(() => ({})) : {};
+    libCollection(false);
+    $("paste-hint").textContent = d.detail || "Couldn't open that playlist.";
+    $("paste-hint").classList.add("bad");
+    setTimeout(() => { $("paste-hint").textContent = "Public or unlisted playlists. Private ones won't open."; $("paste-hint").classList.remove("bad"); }, 5000);
+    return false;
+  }
+  const c = await r.json();
+  $("lib-title").textContent = c.title;
+  $("lib-sub").textContent = c.subtitle;
+  if (c.thumb) $("lib-art").src = c.thumb;
+  const all = c.tracks.map((t) => t.videoId);
+  const btn = $("lib-add");
+  btn.classList.toggle("hidden", !all.length);
+  btn.disabled = false;
+  btn.replaceChildren(ic("shuffle"), all.length > 50 ? "Queue 50, shuffled" : `Queue all ${all.length}, shuffled`);
+  btn.onclick = async () => { if (await addTracks(shuffled(all).slice(0, 50))) { btn.disabled = true; btn.replaceChildren(ic("check"), "Added to the queue"); } };
+  $("lib-tracks").replaceChildren(c.tracks.length ? el("div", { class: "rows" }, ...c.tracks.map(songRow)) : emptyState("queue", "This playlist is empty"));
+  return true;
 }
 
 // ---- boot: ?code= from the QR link wins, then a remembered code
 const initial = (new URLSearchParams(location.search).get("code") || localStorage.getItem("cesura.code") || "").toUpperCase();
 if (initial) fillCode(initial);
+document.querySelectorAll("[data-close]").forEach((b) => (b.innerHTML = icon("x")));
+document.querySelectorAll("[data-ic]").forEach((n) => (n.innerHTML = icon(n.dataset.ic)));
 if (initial && myName) join(initial); // returning guest: straight in (audio needs one tap: the sync pill)
 else (initial ? $("name-input") : boxes[0]).focus();

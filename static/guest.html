@@ -7,7 +7,7 @@
 <title>cesura</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M13 7 9 25M23 7l-4 18' stroke='%23F4B544' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preload" href="/static/fonts/bricolage-grotesque-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/cesura.css">
+<link rel="stylesheet" href="/static/cesura.css?v=0.2.0">
 </head>
 <body>
 
@@ -36,16 +36,18 @@
 
 <!-- Room -->
 <div id="room" class="app hidden">
+  <div id="conn" class="notice conn hidden" role="status" aria-live="polite"></div>
   <div id="notice" class="notice hidden" role="alert"></div>
   <!-- Playing -->
   <header data-for="playing">
     <span class="wordmark">cesura<svg viewBox="0 0 12 20" aria-hidden="true"><path d="M2 17L6 3"/><path d="M6.5 17L10.5 3"/></svg></span>
-    <div class="right"><span class="pill code-chip" data-code></span><span data-people></span></div>
+    <div class="right"><span class="pill code-chip" data-code></span><button class="people-btn" data-people aria-label="Who's here"></button></div>
   </header>
   <section id="v-playing" class="view np-view" data-view="playing" aria-label="Now playing">
     <div class="np-art" id="np-art"></div>
     <h1 class="np-title ellip" id="np-title">Nothing playing yet</h1>
     <p class="np-sub ellip" id="np-sub">Add a song to get the room going</p>
+    <p class="np-hands ellip hidden" id="np-hands"></p>
     <div class="progress">
       <div class="track-bar" id="np-bar"><div class="done"></div><div class="knob"></div><div class="rest"></div></div>
       <div class="times"><span id="np-pos">0:00</span><span id="np-left">-0:00</span></div>
@@ -57,6 +59,14 @@
     </div>
     <div class="syncpill" id="sync" role="status"></div>
     <button class="syncpill hidden" id="unlock">Tap to start audio on this device</button>
+    <div class="np-extras">
+      <button class="chip-btn" id="lyrics-btn"><span data-ic="lyrics" style="display:contents"></span>Lyrics</button>
+      <label class="switch" id="pocket-row">
+        <input type="checkbox" id="pocket" role="switch">
+        <span class="track" aria-hidden="true"></span>
+        <span class="sw-l"><b>Pocket mode</b><span>keeps playing when locked, loosely synced</span></span>
+      </label>
+    </div>
     <div class="volume" id="volume">
       <button id="mute" aria-label="Mute"></button>
       <input id="vol" type="range" min="0" max="100" value="80" aria-label="Volume on this device">
@@ -67,7 +77,7 @@
   <!-- Queue -->
   <header data-for="queue" class="hidden">
     <h1>Queue</h1>
-    <div class="right"><span class="pill code-chip" data-code></span><span class="pill" id="q-count"></span></div>
+    <div class="right"><span class="pill code-chip" data-code></span><button class="pill people-pill" id="q-count" aria-label="Who's here"></button></div>
   </header>
   <section class="view hidden" data-view="queue" aria-label="Queue">
     <button class="fake-search" id="q-search"></button>
@@ -113,16 +123,62 @@
     </div>
   </section>
 
+  <!-- Library -->
+  <header data-for="library" class="hidden">
+    <h1>Library</h1>
+    <div class="right"><span class="pill code-chip" data-code></span></div>
+  </header>
+  <section class="view hidden" data-view="library" aria-label="Library">
+    <div id="lib-list-view">
+      <form class="paste" id="paste-form" autocomplete="off">
+        <div class="label">Paste a playlist</div>
+        <div class="paste-row">
+          <div class="searchfield"><span data-ic="link" style="display:contents"></span>
+            <input id="paste-url" type="url" inputmode="url" placeholder="YouTube or YT Music playlist link" aria-label="Playlist link" enterkeyhint="go"></div>
+          <button class="btn amber" id="paste-go">Open</button>
+        </div>
+        <div class="paste-hint" id="paste-hint">Public or unlisted playlists. Private ones won't open.</div>
+      </form>
+      <div id="host-lib"></div>
+    </div>
+    <div id="lib-coll-view" class="hidden">
+      <button class="btn fill" id="lib-back" style="margin-top:4px"></button>
+      <div class="coll-head">
+        <img id="lib-art" alt="">
+        <div class="grow"><div class="t" id="lib-title"></div><div class="muted" id="lib-sub" style="font-size:13px;margin-top:4px"></div></div>
+      </div>
+      <button class="btn amber" id="lib-add" style="width:100%;margin-top:14px;height:50px;border-radius:14px"></button>
+      <div id="lib-tracks" style="margin-top:6px"></div>
+    </div>
+  </section>
+
   <nav class="tabbar" aria-label="Sections">
     <button data-tab="playing" aria-current="page"><span data-ic="playing" style="display:contents"></span>Playing</button>
     <button data-tab="queue"><span data-ic="queue" style="display:contents"></span>Queue</button>
     <button data-tab="search"><span data-ic="search" style="display:contents"></span>Search</button>
+    <button data-tab="library"><span data-ic="library" style="display:contents"></span>Library</button>
   </nav>
+</div>
+
+<!-- Lyrics -->
+<div id="lyrics-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="lyrics-h">
+  <div class="sheet-card">
+    <div class="modal-head"><div class="grow"><h2 id="lyrics-h" class="ellip">Lyrics</h2><div class="faint ellip" id="lyrics-sub" style="font-size:13px"></div></div>
+      <button class="iconbtn bare" data-close aria-label="Close"></button></div>
+    <div id="lyrics-body" class="lyrics"></div>
+  </div>
+</div>
+<!-- Who's here (co-hosts can remove people from here) -->
+<div id="people-sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="people-h">
+  <div class="sheet-card">
+    <div class="modal-head"><h2 id="people-h">In the room</h2><button class="iconbtn bare" data-close aria-label="Close"></button></div>
+    <div id="people-list" style="margin-top:8px"></div>
+  </div>
 </div>
 
 <audio id="audio" preload="auto"></audio>
 <div id="toast" class="toast hidden" role="status"></div>
-<script src="/static/common.js"></script>
-<script src="/static/guest.js"></script>
+<script src="/static/common.js?v=0.2.0"></script>
+<script src="/static/guest.js?v=0.2.0"></script>
 </body>
 </html>
