@@ -193,7 +193,7 @@ def main():
         host.mouse.click(5, 500)
         check("library: host's playlists appear when shared", lambda: expect(maya.locator("#host-lib .lrow-btn")).to_have_count(4, timeout=10000))
         if a.shots:
-            maya.wait_for_timeout(500)
+            maya.wait_for_timeout(3000)  # let the "new room code" toast clear
             maya.screenshot(path=f"{a.shots}/guest-library.png")
         maya.locator("#host-lib .lrow-btn", has_text="Road trip").click()
         check("library playlist sheet with Queue all (shuffled)", lambda: (

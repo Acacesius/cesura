@@ -62,8 +62,9 @@ function apply(s) {
   if (artQid !== (n ? n.qid : null)) { artQid = n ? n.qid : null; $("np-art").replaceChildren(n ? art(n, "") : el("div", { class: "art-ph" })); }
   $("np-title").textContent = n ? n.title : "Nothing playing yet";
   $("np-sub").textContent = n ? [n.artists, n.album].filter(Boolean).join(" · ") : "Add a song from the queue panel";
-  $("np-by").replaceChildren(...(n && (n.by || n.auto) ? [avatar(n.by || "Radio"), n.by ? `Added by ${n.by}` : "From radio"] : []),
-    ...(s.hands ? [el("span", { class: "mono", style: "color:var(--status);font-size:12px", textContent: `· ${s.hands.text}` })] : []));
+  $("np-by").replaceChildren(...(n && (n.by || n.auto) ? [avatar(n.by || "Radio"), n.by ? `Added by ${n.by}` : "From radio"] : []));
+  $("np-hands").textContent = s.hands ? s.hands.text : "";
+  $("np-hands").classList.toggle("hidden", !s.hands);
   $("pause").innerHTML = icon(s.status === "paused" ? "play" : "pause");
   $("pause").setAttribute("aria-label", s.status === "paused" ? "Resume for everyone" : "Pause for everyone");
   $("pause").disabled = !n || s.status === "loading";

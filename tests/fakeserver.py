@@ -84,6 +84,9 @@ media.cookie_ytmusic = lambda path=None: FakeLibrary()
 cookies.soonest_auth_expiry = lambda path: int(time.time() + 300 * 86400)
 
 if __name__ == "__main__":
+    from app import setup as setupstate
+    if not setupstate.is_complete():  # skip the wizard: a test instance, keyed by HOST_KEY
+        setupstate.save_state({"complete": True, "public_url": os.environ.get("PUBLIC_URL") or "https://cesura.example.com"})
     from app import main
     if os.environ.get("FAKE_CODE"):  # screenshots: fixed, made-up room codes (also after "New code")
         codes = iter([os.environ["FAKE_CODE"], "RVKMN", "HPLWD", "MGTBX"] * 100)

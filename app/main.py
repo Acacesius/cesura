@@ -641,7 +641,7 @@ async def guest_page():
 @app.get("/healthz")
 async def healthz():
     """Container healthcheck: the web server is up. No auth, no state, no secrets."""
-    return {"ok": True, "setup_complete": setupstate.is_complete(), "youtube": resolver.cookie_health()}
+    return {"ok": True, "version": VERSION, "setup_complete": setupstate.is_complete(), "youtube": resolver.cookie_health()}
 
 
 @app.get("/host")
