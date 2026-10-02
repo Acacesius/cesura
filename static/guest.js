@@ -660,9 +660,9 @@ async function renderHostLib() {
   const row = (p, iconName) => el("button", { class: "lrow-btn", onclick: () => openLibPlaylist(p.id) },
     p.thumb ? el("img", { class: "art", src: p.thumb, alt: "", loading: "lazy" }) : el("span", { class: "art art-ic", html: icon(iconName) }),
     el("div", { class: "grow" }, el("div", { class: "t ellip", textContent: p.title }), p.subtitle ? el("div", { class: "s ellip", textContent: p.subtitle }) : null), ic("chevron"));
-  box.replaceChildren(el("div", { class: "sechead", textContent: "HOST'S LIBRARY" }),
+  box.replaceChildren(...[el("div", { class: "sechead", textContent: "HOST'S LIBRARY" }),
     el("div", { class: "rows" }, row({ ...libData.liked, subtitle: "Songs the host liked" }, "heart"), ...libData.playlists.map((p) => row(p, "library"))),
-    libData.playlists.length ? null : el("div", { class: "empty", textContent: "No playlists in the host's library." }));
+    libData.playlists.length ? null : el("div", { class: "empty", textContent: "No playlists in the host's library." })].filter(Boolean));
 }
 
 function libCollection(on) {

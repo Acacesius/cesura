@@ -194,4 +194,4 @@ python3 tests/smoke.py --image cesura:dev     # the same smoke test CI runs befo
 
 ## License
 
-MIT. See [LICENSE](LICENSE). The bundled fonts, Bricolage Grotesque and IBM Plex Mono, are under the SIL Open Font License; see `static/fonts/`.
+MIT. See [LICENSE](LICENSE). The bundled fonts, Bricolage Grotesque and IBM Plex Mono, are under the SIL Open Font License; see `static/ds/fonts/`.

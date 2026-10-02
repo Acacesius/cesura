@@ -85,6 +85,8 @@ cookies.soonest_auth_expiry = lambda path: int(time.time() + 300 * 86400)
 
 if __name__ == "__main__":
     from app import main
-    if os.environ.get("FAKE_CODE"):  # screenshots: a fixed, obviously fake room code
-        main.room.code = os.environ["FAKE_CODE"]
+    if os.environ.get("FAKE_CODE"):  # screenshots: fixed, made-up room codes (also after "New code")
+        codes = iter([os.environ["FAKE_CODE"], "RVKMN", "HPLWD", "MGTBX"] * 100)
+        main.new_code = lambda: next(codes)
+        main.room.code = main.new_code()
     uvicorn.run(main.app, host="0.0.0.0", port=8765, log_level="warning")
