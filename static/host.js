@@ -71,7 +71,9 @@ function apply(s) {
   $("skip").disabled = !n;
   $("skip").title = s.votes ? `Skip now (${s.votes}/${s.votes_needed} votes so far)` : "Skip now";
   $("radio-toggle").setAttribute("aria-pressed", String(s.radio));
-  $("radio-toggle").replaceChildren(ic("radio"), s.radio ? "Radio on" : "Radio off");
+  // Short label so it never collides with the pause button in a narrow column; state shows in the icon colour.
+  $("radio-toggle").replaceChildren(ic("radio"), "Radio");
+  $("radio-toggle").title = s.radio ? "Autoplay radio is on" : "Autoplay radio is off";
 
   // stats + recent actions
   $("st-played").textContent = h.stats.songs_played;
@@ -82,11 +84,13 @@ function apply(s) {
     : [el("div", { class: "empty", textContent: "Who queued, skipped, paused and resumed shows up here." })]));
 
   // queue
-  $("q-sub").textContent = `${s.queue.length} song${s.queue.length === 1 ? "" : "s"} · ${totalMin(s.queue)} min · guests take turns${s.radio ? " · then autoplay radio" : ""}`;
+  $("q-count").textContent = `${s.queue.length} song${s.queue.length === 1 ? "" : "s"}`;
+  segs($("q-sub"), [s.queue.length ? `${totalMin(s.queue)} min` : null, "guests take turns", s.radio ? "then autoplay radio" : "radio off"]);
+  $("q-hdr").classList.toggle("hidden", !s.queue.length);
   const rows = s.queue.map((t, i) => qrow(t, i, e));
   $("queue").replaceChildren(...(rows.length ? rows : [emptyState("queue", "Nothing queued", "Search above to add songs, or share the code so guests can.")]));
   if (rows.length) touchQueue(rows, { onRemove: (qid) => remove(s.queue.find((t) => t.qid === qid)), onMove: move });
-  $("radio-sub").textContent = s.radio ? `Plays when the queue runs out${n ? ` · seeded from ${n.title}` : ""}` : "Off. The room goes quiet when the queue runs out.";
+  segs($("radio-sub"), s.radio ? ["Plays when the queue runs out", n ? `seeded from ${n.title}` : null] : ["Off. The room goes quiet when the queue runs out."]);
   $("radio-btn").textContent = s.radio ? "Turn off" : "Turn on";
   $("auto").replaceChildren(...s.auto.slice(0, 6).map((t) => autorow(t, e)));
 
@@ -130,18 +134,21 @@ function apply(s) {
   renderSettings();
 }
 
+// A line of " · "-separated parts that wraps only between parts, never mid-phrase.
+function segs(node, parts) {
+  const kids = [];
+  parts.filter(Boolean).forEach((t, i) => { if (i) kids.push(el("span", { class: "sep", textContent: " · " })); kids.push(el("span", { class: "seg", textContent: t })); });
+  node.replaceChildren(...kids);
+}
+
 function ago(s) { return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h`; }
 
 function qrow(t, i, engine) {
   const row = el("div", { class: `qgrid qrow${i === 0 ? " first" : ""}`, draggable: "true" },
     el("span", { class: "handle", html: icon("grip"), title: "Drag to reorder" }),
     art(t),
-    el("div", { style: "min-width:0" },
-      el("div", { class: "t" }, el("span", { textContent: t.title }),
-        t.pinned ? el("span", { class: "tag amber", textContent: "PINNED" }) : null,
-        engine.next_qid === t.qid && engine.next === "cached" ? el("span", { class: "tag", textContent: "CACHED" }) : null),
-      el("div", { class: "s ellip", textContent: t.artists })),
-    el("span", { class: "who" }, avatar(t.by || "?"), el("span", { class: "ellip", textContent: t.by || "Guest" })),
+    trackCell(t, engine, t.pinned ? el("span", { class: "tag amber", textContent: "PINNED" }) : null),
+    el("span", { class: "who", title: t.by || "Guest" }, avatar(t.by || "?"), el("span", { class: "ellip name", textContent: t.by || "Guest" })),
     el("span", { class: "time", textContent: fmt(t.duration) }),
     el("button", { class: "iconbtn bare", html: icon("x"), ariaLabel: `Remove ${t.title}`, onclick: () => remove(t) }));
   row.dataset.qid = t.qid;
@@ -160,13 +167,17 @@ function qrow(t, i, engine) {
   return row;
 }
 
+// Title on its own line (ellipsis); artist line carries the badges, so they never cover the title.
+function trackCell(t, engine, ...tags) {
+  const cached = engine.next_qid === t.qid && engine.next === "cached" ? el("span", { class: "tag", textContent: "CACHED" }) : null;
+  return el("div", { class: "cell" },
+    el("div", { class: "t ellip", textContent: t.title }),
+    el("div", { class: "s" }, el("span", { class: "ellip", textContent: t.artists || "" }), ...tags, cached));
+}
+
+// Autoplay radio: [art][title / artist][duration][+]
 function autorow(t, engine) {
-  return el("div", { class: "qgrid qrow" },
-    el("span"), art(t),
-    el("div", { style: "min-width:0" },
-      el("div", { class: "t", style: "font-weight:500" }, el("span", { textContent: t.title }), engine.next_qid === t.qid && engine.next === "cached" ? el("span", { class: "tag", textContent: "CACHED" }) : null),
-      el("div", { class: "s ellip", textContent: t.artists })),
-    el("span", { class: "who faint", style: "font-size:13px", textContent: "Suggested" }),
+  return el("div", { class: "agrid qrow" }, art(t), trackCell(t, engine),
     el("span", { class: "time", textContent: fmt(t.duration) }),
     el("button", { class: "iconbtn", html: icon("plus"), ariaLabel: `Add ${t.title} to queue`, onclick: () => addIds([t.videoId], t.title) }));
 }

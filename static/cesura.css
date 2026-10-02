@@ -132,10 +132,19 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 .host .pill { height: 36px; padding: 0 14px; gap: 8px; font-weight: 600; }
 .host .pill.session { font-family: var(--mono); font-weight: 400; color: var(--muted); }
 .host .pill.session b { color: var(--text); font-weight: 500; }
-.host main { flex: 1; padding: 24px 32px 32px; display: grid; grid-template-columns: 392px minmax(0, 1fr) 376px; gap: 24px; align-items: start; }
+/* Middle column widest; columns stretch to the tallest so the queue card can fill its column. */
+.host main { flex: 1; padding: 24px 32px 32px; display: grid; grid-template-columns: minmax(300px, 1fr) minmax(440px, 1.5fr) minmax(300px, 1fr); gap: 24px; align-items: stretch; }
 .host .col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .host .card { padding: 20px 24px; }
-.host .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.host .col.center .queue-card { flex: 1; }
+/* One header style for every card: mono caps label, right-hand label or count on the same baseline. */
+.host .card-head { min-height: 20px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.host .card-head .label { white-space: nowrap; }
+.host .card-head .count { margin-left: 6px; font-weight: 500; color: var(--text); }
+.host .card-head .label.count { margin: 0; color: var(--muted); }
+.np-by { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--faint); }
+.np-by .avatar { width: 20px; height: 20px; font-size: 10px; }
+.host .controls { gap: 8px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
 .host .np-art { max-width: none; max-height: none; border-radius: 14px; }
 .host .np-title { margin-top: 18px; font-size: 26px; }
 .host .controls { margin-top: 14px; }
@@ -148,11 +157,16 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 .stats span { font-size: 12px; color: var(--muted); }
 .host h2 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
 .host .sub { margin-top: 2px; font-size: 13px; color: var(--muted); }
+.host .card-head + .sub { margin-top: -8px; }
+.segs .seg { white-space: nowrap; }  /* wrap only at the " · " separators */
 .addbox { position: relative; margin-top: 16px; }
-.addbox .searchfield { height: 48px; border-width: 1px; background: var(--ground); }
-.addbox .searchfield input { font-size: 15px; }
+.addbox .searchfield { width: 100%; height: 48px; border-width: 1px; background: var(--ground); }
+.addbox .searchfield input { font-size: 15px; text-overflow: ellipsis; }
 .dropdown { position: absolute; left: 0; right: 0; top: 54px; z-index: 5; max-height: 380px; overflow-y: auto; padding: 6px 14px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 16px 40px #000a; }
-.qgrid { display: grid; grid-template-columns: 16px 44px minmax(0, 1fr) 116px 44px 44px; gap: 12px; align-items: center; padding: 0 10px; }
+.queue-card { container-type: inline-size; }
+.qgrid { display: grid; grid-template-columns: 16px 44px minmax(0, 1fr) minmax(0, 120px) 52px 44px; gap: 12px; align-items: center; padding: 0 10px; }
+/* Autoplay radio rows: [art][title / artist][duration][+], art aligned with the queue's art column. */
+.agrid { display: grid; grid-template-columns: 44px minmax(0, 1fr) 52px 44px; gap: 12px; align-items: center; padding: 0 10px 0 38px; }
 .qhdr { margin-top: 16px; height: 28px; font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--faint); }
 .qrow { height: 60px; border-radius: 12px; }
 .qrow.first { background: var(--raised); }
@@ -161,15 +175,24 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 .qrow .handle { color: var(--faint); cursor: grab; display: flex; }
 .qrow .handle svg.i { width: 16px; height: 16px; }
 .qrow .art { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; }
-.qrow .t { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.qrow .t span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qrow .s { margin-top: 2px; font-size: 13px; color: var(--muted); }
+.qrow .cell { min-width: 0; }
+.qrow .t { font-size: 15px; font-weight: 600; }
+.agrid .t { font-weight: 500; }
+.qrow .s { margin-top: 2px; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; color: var(--muted); }
+.qrow .s .ellip { min-width: 0; }
+.qrow .s .tag { flex: none; padding: 0 5px; font-size: 9px; line-height: 15px; }
 .qrow .who { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); min-width: 0; }
-.qrow .time { font-family: var(--mono); font-size: 13px; color: var(--muted); }
-.radio-sec { margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.radio-sec .l { display: flex; align-items: center; gap: 12px; }
-.radio-sec svg.i { color: var(--status); }
-.codebox { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 14px 0 18px; }
+.qrow .time { font-family: var(--mono); font-size: 13px; color: var(--muted); text-align: right; }
+.qhdr .time { text-align: right; }
+@container (max-width: 480px) {  /* narrow queue card: "added by" shrinks to the avatar */
+  .qgrid { grid-template-columns: 16px 44px minmax(0, 1fr) 28px 52px 44px; }
+  .qgrid .who .name, .qhdr .who { visibility: hidden; }
+  .qgrid .who .name { display: none; }
+}
+.radio-sec { margin-top: 8px; padding: 16px 10px 8px; border-top: 1px solid var(--line); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.radio-ic { display: flex; color: var(--status); }
+.radio-t { font-size: 15px; font-weight: 700; }
+.codebox { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 0 0 18px; }
 .codebox span { height: 60px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 30px; font-weight: 600; color: var(--amber); background: var(--ground); border: 1px solid var(--line); border-radius: 12px; }
 .joinrow { display: flex; align-items: center; gap: 14px; }
 .joinrow img { width: 80px; height: 80px; padding: 6px; border-radius: 10px; background: var(--text); flex: none; }
@@ -182,14 +205,15 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 .lrow .st { display: flex; align-items: center; justify-content: flex-end; gap: 5px; font-size: 11px; color: var(--status); }
 .lrow .st .dot { width: 6px; height: 6px; }
 .lrow .st.warn { color: var(--warn); } .lrow .st.idle { color: var(--faint); } .lrow .st.idle .dot { background: var(--faint); }
-.erow { height: 46px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
-.erow .v { font-family: var(--mono); font-size: 14px; color: var(--text); }
+.erow { height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+.erow > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.erow .v { flex: none; white-space: nowrap; font-family: var(--mono); font-size: 14px; color: var(--text); }
 .erow .v.ok { color: var(--status); } .erow .v.bad { color: var(--amber); }
 .popover { position: absolute; right: 32px; top: 64px; z-index: 10; width: 280px; padding: 8px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 16px 40px #000a; }
 .popover button, .popover a { width: 100%; height: 44px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-radius: 10px; color: var(--text); text-decoration: none; font-size: 14px; font-weight: 600; }
 .popover button:hover, .popover a:hover { background: var(--surface); }
 .host .toast { bottom: 24px; }
-@media (max-width: 1180px) {
+@media (max-width: 1199px) {  /* two columns; the queue spans the full width below */
   .host main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .host .col.center { grid-column: 1 / -1; order: 3; }
 }

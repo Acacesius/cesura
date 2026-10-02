@@ -51,7 +51,7 @@
   <main>
     <div class="col">
       <section class="card" aria-label="Now playing">
-        <div class="card-head"><span class="label">Now playing</span><span id="np-by" class="faint" style="display:flex;align-items:center;gap:8px;font-size:13px"></span></div>
+        <div class="card-head"><span class="label">Now playing</span><span id="np-by" class="np-by"></span></div>
         <div class="np-art" id="np-art"></div>
         <h1 class="np-title ellip" id="np-title">Nothing playing yet</h1>
         <p class="np-sub ellip" id="np-sub"></p>
@@ -66,21 +66,24 @@
           <button class="round" id="skip" aria-label="Skip song"></button>
         </div>
       </section>
-      <section class="card stats" aria-label="Session stats">
-        <div><b id="st-played">0</b><span>songs played</span></div>
-        <div><b id="st-drift">–</b><span>median drift</span></div>
-        <div><b id="st-peak">0</b><span>peak listeners</span></div>
+      <section class="card" aria-label="Session stats">
+        <div class="card-head"><span class="label">Session</span></div>
+        <div class="stats">
+          <div><b id="st-played">0</b><span>songs played</span></div>
+          <div><b id="st-drift">–</b><span>median drift</span></div>
+          <div><b id="st-peak">0</b><span>peak listeners</span></div>
+        </div>
       </section>
       <section class="card" aria-label="Recent actions">
-        <div class="card-head" style="margin-bottom:6px"><span style="font-size:16px;font-weight:700">Hands on it</span><span class="label">Recent</span></div>
+        <div class="card-head"><span class="label">Hands on it</span><span class="label">Recent</span></div>
         <div class="feed" id="feed"></div>
       </section>
     </div>
 
     <div class="col center">
-      <section class="card" aria-label="Up next" style="padding:20px 24px 12px">
-        <h2>Up next</h2>
-        <div class="sub" id="q-sub"></div>
+      <section class="card queue-card" aria-label="Up next">
+        <div class="card-head"><span class="label">Up next</span><span class="label count" id="q-count"></span></div>
+        <div class="sub segs" id="q-sub"></div>
         <div class="addbox">
           <form class="searchfield" id="add-form" role="search" autocomplete="off">
             <span id="add-ic" style="display:contents"></span>
@@ -88,19 +91,20 @@
           </form>
           <div class="dropdown hidden" id="add-results"></div>
         </div>
-        <div class="qgrid qhdr" aria-hidden="true"><span></span><span></span><span>TITLE</span><span class="who">ADDED BY</span><span class="time">TIME</span><span></span></div>
+        <div class="qgrid qhdr" id="q-hdr" aria-hidden="true"><span></span><span></span><span>TITLE</span><span class="who">ADDED BY</span><span class="time">TIME</span><span></span></div>
         <div id="queue"></div>
         <div class="radio-sec">
-          <div class="l"><span id="radio-ic" style="display:contents"></span><div><div style="font-size:15px;font-weight:700">Autoplay radio</div><div class="sub" id="radio-sub"></div></div></div>
+          <span class="radio-ic" id="radio-ic"></span>
+          <div class="radio-txt"><div class="radio-t">Autoplay radio</div><div class="sub segs" id="radio-sub"></div></div>
           <button class="btn" id="radio-btn"></button>
         </div>
-        <div id="auto" style="margin-top:6px"></div>
+        <div id="auto"></div>
       </section>
     </div>
 
     <div class="col">
       <section class="card" aria-label="Room code">
-        <div class="card-head" style="margin:0"><span class="label">Room code</span><span class="faint" style="font-size:12px" id="lock-state"></span></div>
+        <div class="card-head"><span class="label">Room code</span><span class="label" id="lock-state"></span></div>
         <div class="codebox" id="codebox"></div>
         <div class="code-note hidden" id="code-note">NEW CODE · LISTENERS STAYED CONNECTED</div>
         <div class="joinrow">
@@ -117,16 +121,16 @@
         </div>
       </section>
       <section class="card" aria-label="Listening">
-        <div class="card-head" style="margin-bottom:8px"><span style="font-size:16px;font-weight:700">Listening <span class="mono muted" style="font-weight:500" id="l-count">0</span></span><span class="label" style="letter-spacing:.12em">Drift</span></div>
+        <div class="card-head"><span class="label">Listening <b class="count" id="l-count">0</b></span><span class="label">Drift</span></div>
         <div id="listeners"></div>
       </section>
       <section class="card" aria-label="Engine">
-        <div style="font-size:16px;font-weight:700;margin-bottom:8px">Engine</div>
+        <div class="card-head"><span class="label">Engine</span></div>
         <div class="erow"><span>Stream</span><span class="v" id="e-stream">–</span></div>
         <div class="erow"><span>Next song</span><span class="v" id="e-next">–</span></div>
         <div class="erow"><span>YouTube link</span><span class="v" id="e-cookies">–</span></div>
         <div class="erow"><span>Premium · 256k</span><span class="v" id="e-premium">–</span></div>
-        <div class="erow"><span>Soonest cookie expiry</span><span class="v" id="e-expiry">–</span></div>
+        <div class="erow"><span title="Soonest expiry among your sign-in cookies">Cookie expiry</span><span class="v" id="e-expiry">–</span></div>
         <div class="erow"><span>Pocket stream</span><span class="v" id="e-pocket">–</span></div>
         <div class="erow"><span>Wrong codes, 10 min</span><span class="v" id="e-wrong">–</span></div>
       </section>
