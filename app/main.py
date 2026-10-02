@@ -599,8 +599,16 @@ def check_secret(given: str | None, real: str | None, ip: str) -> int:
     return 403
 
 
+CODE_SHAPE = re.compile(f"[{CODE_ALPHABET}]{{5}}")
+
+
 def require_code(conn: Request, code: str | None):
-    status = check_secret((code or "").upper(), room.code, client_ip(conn))
+    code = (code or "").upper()
+    # Only a well-formed code is a guess. A missing or garbled one (a client bug such as
+    # "?code=null") is refused without counting, so it can't lock out a whole network.
+    if not CODE_SHAPE.fullmatch(code):
+        raise HTTPException(403, "bad room code")
+    status = check_secret(code, room.code, client_ip(conn))
     if status:
         raise HTTPException(status, "too many wrong codes, try again later" if status == 429 else "bad room code")
 
@@ -1431,7 +1439,7 @@ async def guest_ws(ws: WebSocket, code: str = "", device: str = "", token: str =
         return
     known = room.people.devices.get(device)
     if not (known and token and secrets.compare_digest(token.encode(), known.token.encode())):
-        status = check_secret(code.upper(), room.code, client_ip(ws))
+        status = check_secret(code.upper(), room.code, client_ip(ws)) if CODE_SHAPE.fullmatch(code.upper()) else 403
         if status:
             await ws.close(code=4029 if status == 429 else 4001, reason="bad room code")
             return

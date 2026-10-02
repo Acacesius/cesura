@@ -249,3 +249,13 @@ def test_heartbeat_reaps_silent_socket(client, monkeypatch):
     p.missed[ws] = 3
     _, dead = p.heartbeat()
     assert dead == [ws]
+
+
+def test_malformed_codes_are_refused_without_counting_toward_lockout(client):
+    for _ in range(25):
+        assert client.get("/stream/vid00000000?code=null&token=x").status_code == 403
+    assert not any(main.fail_log.values())
+    assert client.post("/api/join", json={"code": main.room.code}).status_code == 200  # not locked out
+    for _ in range(10):
+        client.post("/api/join", json={"code": "ZZZZZ" if main.room.code != "ZZZZZ" else "YYYYY"})
+    assert client.post("/api/join", json={"code": main.room.code}).status_code == 429  # real guesses still lock

@@ -22,6 +22,8 @@ RUN groupadd --gid 1000 cesura \
  && mkdir -p /app/config && chown cesura:cesura /app/config
 COPY app/ app/
 COPY static/ static/
+# Readable by the app user whatever the builder's umask was.
+RUN chmod -R a+rX app static
 
 ENV PYTHONUNBUFFERED=1 HOME=/tmp XDG_CACHE_HOME=/tmp/cache DENO_DIR=/tmp/deno \
     CONFIG_DIR=/app/config TRUSTED_PROXY_CIDR=172.16.0.0/12

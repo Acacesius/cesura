@@ -77,6 +77,8 @@ def main() -> int:
         status, headers = request(f"{base}/host")
         check("/host redirects to /setup before setup", status == 303 and headers.get("location") == "/setup", str(status))
         check("/setup is served", request(f"{base}/setup")[0] == 200)
+        check("design system assets are served", all(request(f"{base}/static/{p}")[0] == 200 for p in
+              ("ds/base.css", "ds/core.js", "ds/fonts/ibm-plex-mono-latin-400.woff2", "cesura.css", "common.js")))
         check("setup API rejects missing token", request(f"{base}/api/setup/verify", "POST")[0] == 403)
         check("setup API rejects wrong token", request(f"{base}/api/setup/verify", "POST", {"X-Setup-Token": "wrong"})[0] == 403)
         check("setup API accepts the printed token", request(f"{base}/api/setup/verify", "POST", {"X-Setup-Token": token})[0] == 200)

@@ -85,6 +85,10 @@ function leave(msg) {
   localStorage.removeItem("cesura.code");
   setPocket(false, { quiet: true });
   setListening(false);
+  // Forget the room: a stale state must never drive audio requests without a code.
+  state = null;
+  loadedQid = null;
+  audio.removeAttribute("src");
   if (live) { live.stop(); live = null; }
   $("room").classList.add("hidden");
   $("join").classList.remove("hidden");
@@ -322,7 +326,7 @@ $("unlock").addEventListener("click", () => { unlockAudio(); steer(); });
 
 function steer() {
   const s = state;
-  if (!listening || !s || pocket) return; // pocket mode: the shared stream, no sync correction
+  if (!listening || !s || pocket || !code) return; // pocket mode: the shared stream, no sync correction
   if (!s.now) {
     loadedQid = null;
     audio.pause();
