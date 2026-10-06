@@ -55,8 +55,11 @@
     </div>
     <div class="controls">
       <button class="round" id="to-queue" aria-label="Open queue"></button>
-      <button class="big" id="pause" aria-label="Pause for everyone" disabled></button>
-      <button class="round" id="skip" aria-label="Vote to skip" disabled></button>
+      <div class="transport" role="group" aria-label="Playback">
+        <button class="round off" id="back" aria-label="Previous song"></button>
+        <button class="big" id="pause" aria-label="Pause for everyone" disabled></button>
+        <button class="round" id="skip" aria-label="Vote to skip" disabled></button>
+      </div>
     </div>
     <div class="syncpill" id="sync" role="status"></div>
     <button class="syncpill hidden" id="unlock">Tap to start audio on this device</button>

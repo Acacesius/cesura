@@ -36,6 +36,7 @@ const mediaHandlers = {
   play: () => state && roomPost("/api/pause", { paused: false }),
   pause: () => state && roomPost("/api/pause", { paused: true }),
   next: () => skipNow(),
+  prev: () => goBack(),
 };
 
 const HEALTH = {
@@ -74,6 +75,7 @@ function apply(s) {
   $("pause").setAttribute("aria-label", s.status === "paused" ? "Resume for everyone" : "Pause for everyone");
   $("pause").disabled = !n || s.status === "loading";
   $("skip").disabled = !n;
+  $("back").disabled = !n && !s.can_back;
   $("skip").title = s.votes ? `Skip now (${s.votes}/${s.votes_needed} votes so far)` : "Skip now";
   $("radio-toggle").setAttribute("aria-pressed", String(s.radio));
   // Short label so it never collides with the pause button in a narrow column; state shows in the icon colour.
@@ -228,6 +230,12 @@ async function addIds(videoIds, label) {
   else toast(r.status === 409 ? "The queue is full." : "Couldn't add that.");
 }
 function skipNow() { if (state && state.now) roomPost("/api/skip", { qid: state.now.qid }); }
+// Back: restarts the song once it has played a few seconds, otherwise the previous one (kept on the server).
+async function goBack() {
+  if (!state || (!state.now && !state.can_back)) return;
+  const r = await roomPost("/api/back", { qid: state.now ? state.now.qid : "" });
+  if (r.ok && (await r.json()).did === "restarted") toast("Restarted");
+}
 async function kick(l) {
   closeMenus();
   if (!confirm(`Kick ${l.name}? Their connections close; they can rejoin with the code.`)) return;
@@ -339,6 +347,8 @@ $("pop-guest").replaceChildren(ic("external"), "Open guest view");
 $("add-ic").innerHTML = icon("search");
 $("radio-ic").innerHTML = icon("radio");
 $("skip").innerHTML = icon("skip");
+$("back").innerHTML = icon("prev");
+$("back").addEventListener("click", goBack);
 document.querySelectorAll("[data-close]").forEach((b) => (b.innerHTML = icon("x")));
 
 // search-to-add dropdown
@@ -388,6 +398,7 @@ function tick() {
   const p = seeker.preview ?? real;
   seeker.show(p, d);
   setBar($("np-bar"), d ? p / d : 0);
+  $("back").setAttribute("aria-label", n && real > 3 ? "Restart song" : "Previous song");
   $("np-pos").textContent = fmt(p);
   $("np-dur").textContent = fmt(d);
   const secs = serverNow() - state.host.stats.session_start;

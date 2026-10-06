@@ -30,6 +30,7 @@ const P = {
   play: '<path d="M7 4.5v15l12-7.5z" fill="currentColor"/>',
   pause: '<path d="M8 5v14M16 5v14"/>',
   skip: '<path d="M6 5l10 7-10 7z"/><path d="M18 5v14"/>',
+  prev: '<path d="M18 5L8 12l10 7z"/><path d="M6 5v14"/>',
   queue: '<path d="M4 6h16M4 12h10M4 18h10"/><path d="M17 14l4 3-4 3z"/>',
   playing: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
@@ -104,7 +105,7 @@ function toast(msg) {
 }
 
 // ---- lock screen / notification controls (every client)
-// handlers: { play, pause, next } -> the normal room commands.
+// handlers: { play, pause, next, prev } -> the normal room commands.
 function setMediaSession(n, handlers, playing) {
   if (!("mediaSession" in navigator)) return;
   const ms = navigator.mediaSession;
@@ -113,8 +114,8 @@ function setMediaSession(n, handlers, playing) {
   try { ms.playbackState = !n ? "none" : playing ? "playing" : "paused"; } catch {}
   if (handlers && !setMediaSession.wired) {
     setMediaSession.wired = true;
-    for (const [action, fn] of [["play", handlers.play], ["pause", handlers.pause], ["nexttrack", handlers.next]]) {
-      try { ms.setActionHandler(action, fn); } catch {}
+    for (const [action, fn] of [["play", handlers.play], ["pause", handlers.pause], ["nexttrack", handlers.next], ["previoustrack", handlers.prev]]) {
+      try { if (fn) ms.setActionHandler(action, fn); } catch {}
     }
   }
 }

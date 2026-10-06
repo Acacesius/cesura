@@ -335,6 +335,23 @@ def main():
         check("seek by keyboard: three ArrowLefts = one jump back ~15 s", lambda: host.wait_for_function(
             "p0 => { const p = posOf(state); return p < p0 - 10 && p > p0 - 19; }", arg=p0, timeout=5000))
 
+        # Back: past 3 s it restarts the song; pressed again right away it goes to the previous song,
+        # and the one we left goes back to the top of the queue. Co-hosts have it; guests don't.
+        cur = host.locator("#np-title").inner_text()
+        host.click("#back")
+        check("back after a few seconds restarts the song", lambda: (
+            host.wait_for_function("() => posOf(state) < 3", timeout=5000),
+            expect(host.locator("#np-title")).to_have_text(cur)))
+        host.click("#back")
+        check("back again goes to the previous song; the current one returns to the top", lambda: (
+            expect(host.locator("#np-title")).not_to_have_text(cur, timeout=5000),
+            expect(host.locator("#queue .qrow").first.locator(".t")).to_have_text(cur, timeout=5000),
+            expect(host.locator("#feed")).to_contain_text("went back to", timeout=5000)))
+        theo.click("nav.tabbar [data-tab=playing]")
+        check("back: co-host has it, guest doesn't", lambda: (
+            expect(theo.locator("#back")).to_be_visible(timeout=3000),
+            expect(maya.locator("#back")).to_be_hidden()))
+
         # Tap targets: everything interactive on the phone screens is at least 44px in both directions (or wraps a 44px area).
         def small_targets(pg):
             return pg.evaluate("""() => [...document.querySelectorAll('button, a, input:not([type=checkbox]):not([type=range]), label.switch, [role=button]')]

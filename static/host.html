@@ -62,8 +62,12 @@
         </div>
         <div class="controls">
           <button class="radio-pill" id="radio-toggle" aria-pressed="true"></button>
-          <button class="big" id="pause" aria-label="Pause for everyone"></button>
-          <button class="round" id="skip" aria-label="Skip song"></button>
+          <div class="transport" role="group" aria-label="Playback">
+            <button class="round" id="back" aria-label="Previous song"></button>
+            <button class="big" id="pause" aria-label="Pause for everyone"></button>
+            <button class="round" id="skip" aria-label="Skip song"></button>
+          </div>
+          <div class="ctl-end" id="ctl-end"></div>
         </div>
       </section>
       <section class="card" aria-label="Session stats">

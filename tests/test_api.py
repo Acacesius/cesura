@@ -334,3 +334,27 @@ def test_seek_moves_the_clock_clamps_and_is_attributed(client):
         assert abs((time.time() - room.started_at) - 150) < 0.1 and room.timer is not None
     finally:
         del room.status
+
+
+def test_back_restarts_then_goes_to_previous_even_after_skip(client):
+    _, g = connect(client, "device-guest")
+    post(client, "/api/add", headers=H, videoIds=ids(3))
+    room = main.room
+    first = room.now
+    assert post(client, "/api/back", g, qid=first["qid"]).status_code == 403   # guests: no
+    # Nothing before the first song: Back restarts it.
+    assert post(client, "/api/back", headers=H, qid=first["qid"]).json()["did"] == "restarted"
+    assert post(client, "/api/skip", headers=H, qid=first["qid"]).json()["ok"]
+    second = room.now
+    assert second["videoId"] != first["videoId"]
+    # Just started (< 3 s): Back goes to the previous song; the skipped-to one returns to the front.
+    r = post(client, "/api/back", headers=H, qid=second["qid"]).json()
+    assert r["did"] == "back" and room.now["videoId"] == first["videoId"] and room.now["qid"] != first["qid"]
+    assert room.queue[0]["videoId"] == second["videoId"]
+    assert room.host_panel()["feed"][0]["text"].startswith("went back to")
+    # Played a while: Back restarts instead.
+    room.loading, room.frozen = False, 42.0
+    assert post(client, "/api/back", headers=H, qid=room.now["qid"]).json()["did"] == "restarted"
+    assert room.position() == 0.0 and room.now["videoId"] == first["videoId"]
+    # Stale requests (someone else already moved on) do nothing.
+    assert post(client, "/api/back", headers=H, qid="old").json() == {"ok": False, "stale": True}

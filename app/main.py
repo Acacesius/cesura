@@ -72,6 +72,7 @@ FAIL_LIMIT, FAIL_WINDOW = 10, 600.0  # wrong codes/keys per client IP per window
 AUTO_TARGET = 10
 LEAD = 1.0       # head start (s) whenever the clock (re)starts, so every listener can buffer
 MAX_FAILS = 3    # consecutive unplayable tracks before giving up
+BACK_RESTART = 3.0  # Back restarts the current song once it has played this long, like any player
 VOTE_FRACTIONS = (0.25, 0.5, 0.75, 1.0)
 HEALTH_EVERY = 6 * 3600   # re-run the YouTube link check this often...
 HEALTH_DEBOUNCE = 600     # ...and when the dashboard opens, unless it ran this recently
@@ -160,6 +161,7 @@ class Room:
         self.votes: set[str] = set()          # device ids
         self.history: deque[str] = deque(maxlen=200)   # videoIds, keeps radio from repeating
         self.played: deque[dict] = deque(maxlen=30)    # for the Played tab
+        self.back_stack: deque[dict] = deque(maxlen=30)  # tracks that played, newest last: what Back goes to
         self.session_log: list[dict] = []              # every track that played, for the export
         self.feed: deque[dict] = deque(maxlen=40)      # recent actions, for the host
         self.hands: dict | None = None                 # last action on the current track ("Paused by Sam")
@@ -275,6 +277,7 @@ class Room:
             "server_time": time.time(),
             "auto": [self.public(t) for t in self.auto],
             "played": list(reversed(self.played)),
+            "can_back": bool(self.back_stack),
             "votes": len(self.votes),
             "votes_needed": self.votes_needed(),
             "voted": bool(me) and me in self.votes,
@@ -422,6 +425,7 @@ class Room:
         if prev:
             self.history.append(prev["videoId"])
             self.played.append(self.public(prev))
+            self.back_stack.append(prev)
         if self.queue:
             self.now = self.fq.pop()
         elif self.auto:
@@ -431,14 +435,9 @@ class Room:
             self.now = self.auto.pop(0) if self.auto else None
         else:
             self.now = None
-        self.started_at, self.frozen = None, 0.0
-        self.loading = self.now is not None
-        self.votes.clear()
-        self.hands = hands if self.now else None
+        self._start(hands)
         log.info("advance (%s): %s", reason, self.now and f"{self.now['artists']} - {self.now['title']}")
         if self.now:
-            self.songs_played += 1
-            asyncio.create_task(self._prepare(self.now))
             # Queue ran dry: seed radio from the track that's now playing. If that
             # track is itself a radio pick, keep the existing radio list going.
             if self.radio and not self.queue and (not self.now["auto"] or len(self.auto) < 3):
@@ -446,6 +445,33 @@ class Room:
                     self.auto.clear()
                 asyncio.create_task(self.refill_auto_and_broadcast(self.now))
         self.sync_clock()
+
+    def _start(self, hands: dict | None):
+        """self.now just changed: reset the clock and votes, and get the track into RAM. Holds self.lock."""
+        self.started_at, self.frozen = None, 0.0
+        self.loading = self.now is not None
+        self.votes.clear()
+        self.hands = hands if self.now else None
+        if self.now:
+            self.songs_played += 1
+            asyncio.create_task(self._prepare(self.now))
+
+    def go_back(self, hands: dict):
+        """Play the previous track again. The current one goes back to the front of the queue (or of
+        the radio list, if it was a radio pick), so skipping forward again returns to it. Holds self.lock."""
+        prev, cur = self.back_stack.pop(), self.now
+        if cur:
+            if cur.get("auto"):
+                self.auto.insert(0, cur)
+            else:
+                self.fq.add([cur], cur.get("owner") or "host", "next")
+        if self.played and self.played[-1]["videoId"] == prev["videoId"]:
+            self.played.pop()  # it's playing again, not "recently played"
+        self.now = {**prev, "qid": uuid.uuid4().hex[:10]}  # a new qid: clients reload it, stale skips miss
+        self._start(hands)
+        log.info("back: %s - %s", self.now["artists"], self.now["title"])
+        self.sync_clock()
+        self.prefetch_next()
 
     async def _prepare(self, item: dict):
         """Get the track into RAM, then let the clock start."""
@@ -553,6 +579,7 @@ class Room:
             self.votes.clear()
             self.history.clear()
             self.played.clear()
+            self.back_stack.clear()
             self.session_log.clear()
             self.feed.clear()
             self.hands = None
@@ -1014,6 +1041,30 @@ async def skip(body: QidBody, request: Request):
                 await room.advance("vote skip", {"kind": "skip", "text": f"The room voted to skip to this ({n})"})
     await room.broadcast()
     return {"ok": True}
+
+
+@app.post("/api/back")
+async def back(body: QidBody, request: Request):
+    """Back, like any player: restart the song once it has played BACK_RESTART seconds (or when
+    there's nothing before it), otherwise go to the previous one. Works after a skip: the server keeps
+    the play history. The host's and co-hosts' call, like skip."""
+    actor = mod_for(request, body)
+    async with room.lock:
+        if room.now and room.now["qid"] != body.qid:
+            return {"ok": False, "stale": True}
+        if room.now and (room.position() > BACK_RESTART or not room.back_stack):
+            room.seek_to(0.0)
+            room.record(actor, "back", f"restarted {room.now['title']}")
+            room.hands = {"kind": "back", "text": f"Restarted by {actor.label}"}
+            did = "restarted"
+        elif room.back_stack:
+            room.go_back({"kind": "back", "text": f"{actor.label} went back to this"})
+            room.record(actor, "back", f"went back to {room.now['title']}")
+            did = "back"
+        else:
+            return {"ok": False}
+    await room.broadcast()
+    return {"ok": True, "did": did}
 
 
 @app.post("/api/pause")

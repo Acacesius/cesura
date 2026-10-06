@@ -208,6 +208,8 @@ function render(s) {
   $("skip").replaceChildren(...[ic("skip"), showVotes ? el("span", { class: "count", textContent: `${s.votes}/${s.votes_needed}` }) : null].filter(Boolean));
   $("skip").setAttribute("aria-label", mod ? "Skip song" : s.votes ? `Vote to skip, ${s.votes} of ${s.votes_needed}` : `Vote to skip (${s.votes_needed} vote${s.votes_needed > 1 ? "s" : ""} needed)`);
   $("skip").title = mod ? "Skip (co-host)" : `Vote to skip · ${s.votes_needed} needed`;
+  $("back").classList.toggle("off", !mod);
+  $("back").disabled = !mod || (!n && !s.can_back);
   $("lyrics-btn").disabled = !n;
   $("pocket").checked = pocket;
   const nx = s.queue[0] || s.auto[0];
@@ -315,6 +317,7 @@ function tick() {
   const p = seeker.preview ?? real;
   seeker.show(p, d);
   setBar($("np-bar"), d ? p / d : 0);
+  $("back").setAttribute("aria-label", n && real > 3 ? "Restart song" : "Previous song");
   $("np-pos").textContent = fmt(p);
   $("np-left").textContent = `-${fmt(Math.max(0, d - p))}`;
   if ($("q-now-bar")) { $("q-now-bar").style.width = `${d ? (p / d) * 100 : 0}%`; $("q-now-time").textContent = `${fmt(p)} / ${fmt(d)}`; }
@@ -501,6 +504,7 @@ const mediaHandlers = {
   play: () => (listening ? setPaused(false) : unlockAudio()),
   pause: () => setPaused(true),
   next: () => voteSkip(),
+  prev: () => isMod() && goBack(),
 };
 
 // ---- room controls
@@ -517,6 +521,14 @@ async function voteSkip() {
   if (r.ok && !isMod()) toast(state.votes + 1 >= state.votes_needed ? "Skipping…" : `Vote counted · ${state.votes + 1} of ${state.votes_needed}`);
 }
 $("skip").addEventListener("click", voteSkip);
+// Back (co-hosts): restarts the song after a few seconds, otherwise the previous one.
+async function goBack() {
+  if (!state || (!state.now && !state.can_back)) return;
+  const r = await api("/api/back", { qid: state.now ? state.now.qid : "" });
+  if (r.ok && (await r.json()).did === "restarted") toast("Restarted");
+}
+$("back").innerHTML = icon("prev");
+$("back").addEventListener("click", goBack);
 $("to-queue").innerHTML = icon("queue");
 $("to-queue").addEventListener("click", () => show("queue"));
 $("upnext").addEventListener("click", () => show("queue"));

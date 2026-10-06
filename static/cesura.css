@@ -72,6 +72,9 @@ nav.tabbar button[aria-current=page] { color: var(--amber); }
 .big { width: 72px; height: 72px; border-radius: 50%; background: var(--amber); color: var(--on-amber); display: flex; align-items: center; justify-content: center; justify-self: center; }
 .big svg.i { width: 30px; height: 30px; stroke-width: 2.4; }
 .controls > :first-child { justify-self: start; } .controls > :last-child { justify-self: end; }
+.controls { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.controls > .transport { justify-self: center; display: flex; align-items: center; gap: 14px; }
+.transport .off { visibility: hidden; }  /* Back is the host's and co-hosts': keep play centred without it */
 .syncpill { margin-top: 10px; align-self: center; min-height: 28px; padding: 4px 12px; display: flex; align-items: center; gap: 8px; border-radius: 999px; background: var(--surface); font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: center; }
 button.syncpill { border: 1px solid var(--amber); color: var(--amber); min-height: 44px; font-weight: 500; }
 .volume { margin-top: 12px; display: flex; align-items: center; gap: 10px; color: var(--faint); }
