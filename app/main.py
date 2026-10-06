@@ -12,6 +12,7 @@ after that a per-device session token authorises audio and every action.
 Pocket listeners (pocket.py) hear one shared stream that follows the clock.
 """
 import asyncio
+import hashlib
 import io
 import json
 import logging
@@ -35,6 +36,8 @@ from ytmusicapi import YTMusic
 
 from . import cookies as cookiejar
 from . import setup as setupstate
+from .artcache import art
+from .delta import Sync, dumps
 from .fair import FairQueue
 from .library import TTLCache, fetch_lyrics, normalize_playlist, session_tracks
 from .netstats import net
@@ -78,6 +81,16 @@ STATIC = os.path.join(os.path.dirname(__file__), "..", "static")
 # The pocket station reads the current track from our own /stream (the in-memory proxy) over loopback.
 INTERNAL_PORT = int(os.environ.get("CESURA_INTERNAL_PORT", "8765"))
 INTERNAL_TOKEN = secrets.token_urlsafe(24)
+DEBOUNCE = 0.1         # a burst of changes (an album's worth of adds) goes out as one push
+PREFETCH_DELAY = 3.0   # fetch the next track once the queue has stopped changing for this long
+OWNER_SALT = secrets.token_bytes(16)
+
+
+def owner_id(owner: str | None) -> str | None:
+    """Who added a track, as clients see it: "host", or an opaque per-device id (never the device id itself)."""
+    if not owner or owner == "host":
+        return owner
+    return hashlib.blake2s(owner.encode(), key=OWNER_SALT, digest_size=5).hexdigest()
 
 ytm = make_ytmusic()
 public_ytm = net.instrument(YTMusic())  # never signed in: pasted playlist links can't reach the host's private playlists
@@ -155,6 +168,9 @@ class Room:
         self.auto_lock = asyncio.Lock()
         self.timer: asyncio.Task | None = None
         self.fails = 0
+        self.sync = Sync()
+        self._flush: asyncio.Task | None = None
+        self._prefetch: asyncio.Task | None = None
 
     @property
     def queue(self) -> list[dict]:
@@ -188,12 +204,13 @@ class Room:
         return "playing"
 
     @staticmethod
-    def public(it: dict | None, me: str | None = None) -> dict | None:
-        """Strip the adder's device id; tell each guest which tracks are theirs."""
+    def public(it: dict | None) -> dict | None:
+        """Replace the adder's device id with an opaque owner id. The same for every client, so one
+        message fits all; each guest knows its own oid (state.me) and so which tracks are theirs."""
         if it is None:
             return None
         d = {k: v for k, v in it.items() if k not in ("owner", "pin")}
-        d["mine"] = bool(me) and it.get("owner") == me
+        d["oid"] = owner_id(it.get("owner"))
         d["pinned"] = it.get("pin") is not None
         return d
 
@@ -238,7 +255,7 @@ class Room:
                        "pocket": {"running": station.running, "listeners": station.listeners, "codec": station.codec},
                        "wrong_codes": sum(1 for q in fail_log.values() for t in q if t > cutoff),
                        "wrong_code_limit": FAIL_LIMIT},
-            "feed": [{**{k: v for k, v in e.items() if k != "at"}, "ago": round(now - e["at"])} for e in reversed(self.feed)][:15],
+            "feed": list(reversed(self.feed))[:15],  # "at" is server time: the dashboard shows how long ago
             "settings": {"vote_fraction": self.vote_fraction, "vote_fractions": VOTE_FRACTIONS,
                          "library": self.library_on, "locked": self.people.locked, "radio": self.radio},
             "banned": len(self.people.banned),
@@ -246,17 +263,16 @@ class Room:
         }
 
     def snapshot(self, d: Device | None = None, for_host=False) -> dict:
+        """Everything a client shows, except the queue (which travels as edits, see delta.py)."""
         me = d.id if d else "host" if for_host else None
         s = {
-            "type": "state",
             "version": VERSION,
-            "now": self.public(self.now, me),
+            "now": self.public(self.now),
             "hands": self.hands and {k: self.hands[k] for k in ("kind", "text")},
             "status": self.status(),
             "started_at": self.started_at,
             "position": round(self.position(), 3),
             "server_time": time.time(),
-            "queue": [self.public(t, me) for t in self.queue],
             "auto": [self.public(t) for t in self.auto],
             "played": list(reversed(self.played)),
             "votes": len(self.votes),
@@ -271,13 +287,14 @@ class Room:
             "notice": NOTICES.get(resolver.cookie_health()),
         }
         if d:
-            s["me"] = {"role": d.role, "pocket": d.in_pocket, "pid": d.pid}
+            s["me"] = {"role": d.role, "pocket": d.in_pocket, "pid": d.pid, "oid": owner_id(d.id)}
             if d.cohost:
                 s["roster"] = self.listener_rows()
         if for_host:
             s["code"] = self.code
             s["public_url"] = public_url()
             s["host"] = self.host_panel()
+            s["me"] = {"oid": "host"}
         return s
 
     # ---- attribution ("hands on it")
@@ -323,9 +340,31 @@ class Room:
         await self._send_text(ws, text)
 
     async def _send_all(self, kind: str, targets: list[tuple[WebSocket, dict]]):
-        texts = [(ws, json.dumps(m, separators=(",", ":"))) for ws, m in targets]
+        texts = [(ws, dumps(m)) for ws, m in targets]
         net.push_batch(kind, [t for _, t in texts])
         await asyncio.gather(*(self._send_text(ws, t) for ws, t in texts))
+
+    def targets(self) -> list[tuple[WebSocket, Device | None]]:
+        out = [(ws, d) for d in list(self.people.devices.values()) for ws in list(d.sockets)]
+        if self.host:
+            out.append((self.host, None))
+        return out
+
+    async def flush(self, only=None):
+        """Bring every socket (or those `only` picks) up to date: a patch, or the full state if it has none."""
+        self.sync.set_queue([self.public(t) for t in self.queue])
+        snaps: dict = {}
+        msgs = []
+        for ws, d in self.targets():
+            if only and not only(ws, d):
+                continue
+            key = d.id if d else "host"
+            if key not in snaps:
+                snaps[key] = self.snapshot(d, for_host=d is None)
+            if (m := self.sync.message(ws, snaps[key])) is not None:
+                msgs.append((ws, m))
+        for kind in ("state", "patch"):
+            await self._send_all(kind, [(ws, m) for ws, m in msgs if m["type"] == kind])
 
     async def push_host(self):
         """Refresh the host dashboard and co-hosts (drift updates), at most once a second."""
@@ -333,28 +372,36 @@ class Room:
         if now - getattr(self, "_host_pushed", 0) < 1:
             return
         self._host_pushed = now
-        targets = [(ws, self.snapshot(d)) for d in self.people.devices.values() if d.cohost for ws in d.sockets]
-        if self.host:
-            targets.append((self.host, self.snapshot(for_host=True)))
-        await self._send_all("state (drift)", targets)
+        if self.sync.queue != [self.public(t) for t in self.queue]:
+            return await self.broadcast()  # queue edits must reach everyone, not just these
+        await self.flush(only=lambda ws, d: d is None or d.cohost)
 
     async def broadcast(self):
-        targets = []
-        for d in list(self.people.devices.values()):
-            snap = self.snapshot(d)
-            targets += [(ws, snap) for ws in list(d.sockets)]
-        if self.host:
-            targets.append((self.host, self.snapshot(for_host=True)))
-        await self._send_all("state", targets)
+        """Push the current state to everyone, DEBOUNCE from now: a burst of changes goes out as one push."""
+        if self._flush is None or self._flush.done():
+            self._flush = asyncio.create_task(self._flush_later())
+
+    async def _flush_later(self):
+        await asyncio.sleep(DEBOUNCE)
+        self._flush = None  # changes made while this push is sending schedule the next one
+        await self.flush()
 
     # ---- queue mechanics
     def item(self, track: dict, auto=False, by: str | None = None) -> dict:
         return {**track, "qid": uuid.uuid4().hex[:10], "auto": auto, "by": by}
 
     def prefetch_next(self):
+        """Fetch the next track ahead of time, once the queue has settled for PREFETCH_DELAY seconds.
+        Someone clearing or reordering the queue song by song starts one download, not one per change."""
+        if self._prefetch and not self._prefetch.done():
+            self._prefetch.cancel()
+        self._prefetch = asyncio.create_task(self._prefetch_later())
+
+    async def _prefetch_later(self):
+        await asyncio.sleep(PREFETCH_DELAY)
         nxt = self.queue[0] if self.queue else self.auto[0] if self.auto else None
-        if nxt:
-            _quiet(resolver.load(nxt["videoId"]))
+        if nxt and not self.loading:  # while the current track loads, its _prepare prefetches afterwards
+            _quiet(resolver.load(nxt["videoId"], prefetch=True))
 
     def check_votes(self) -> bool:
         """The threshold can drop when listeners leave; skip if the votes already cast now suffice. Holds self.lock."""
@@ -656,6 +703,15 @@ def limit_lookups(request: Request):
 @app.get("/")
 async def guest_page():
     return FileResponse(os.path.join(STATIC, "guest.html"))
+
+
+@app.get("/art/{aid}")
+async def artwork(aid: str, s: int = 120):
+    """Album art and artist images, from the disk cache (see artcache.py). Public pictures: no code needed."""
+    got = await art.get(aid, s)
+    if not got:
+        raise HTTPException(404)
+    return FileResponse(got[0], media_type=got[1], headers={"Cache-Control": "public, max-age=604800, immutable"})
 
 
 @app.get("/healthz")
@@ -1499,10 +1555,14 @@ async def guest_ws(ws: WebSocket, code: str = "", device: str = "", token: str =
                 d.pocket = bool(msg.get("on"))
                 d.drift = None
                 await on_presence_change()
+            elif kind == "resync":  # it missed a patch: send the full state again
+                room.sync.forget(ws)
+                await room.broadcast()
     except WebSocketDisconnect:
         pass
     finally:
         room.people.detach(ws)
+        room.sync.forget(ws)
         await on_presence_change()
 
 
@@ -1524,10 +1584,16 @@ async def host_ws(ws: WebSocket, key: str = ""):
     asyncio.create_task(check_health())  # debounced: at most every HEALTH_DEBOUNCE
     try:
         while True:
-            await ws.receive_text()
+            try:
+                if json.loads(await ws.receive_text()).get("type") == "resync":
+                    room.sync.forget(ws)
+                    await room.broadcast()
+            except (ValueError, AttributeError):
+                continue
     except WebSocketDisconnect:
         pass
     finally:
+        room.sync.forget(ws)
         if room.host is ws:
             room.host = None
 
@@ -1541,6 +1607,7 @@ async def heartbeat_loop():
         ping, dead = room.people.heartbeat()
         for ws in dead:
             room.people.detach(ws)
+            room.sync.forget(ws)
             asyncio.create_task(_close_ws(ws, 4008, "no heartbeat"))
         await room._send_all("hb", [(ws, {"type": "hb"}) for ws in ping])
         if dead:

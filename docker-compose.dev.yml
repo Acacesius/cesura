@@ -7,7 +7,7 @@ services:
     build: .
     image: cesura:dev
     restart: unless-stopped
-    # Must be able to write ./config (host key, setup state, cookies.txt).
+    # Must be able to write ./config (host key, setup state, cookies.txt) and ./cache (artwork).
     user: "${CESURA_UID:-1000}:${CESURA_GID:-1000}"
     environment:
       PUBLIC_URL: ${PUBLIC_URL:-}
@@ -23,5 +23,7 @@ services:
       - "${BIND:-127.0.0.1}:${PORT:-8765}:8765"
     volumes:
       - ./config:/app/config
+      # Artwork cache (album art, artist images): served from here so phones don't each fetch from Google.
+      - ./cache:/app/cache
     tmpfs:
       - /tmp

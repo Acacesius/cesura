@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # be writable by this user (compose's `user:` can override the UID/GID).
 RUN groupadd --gid 1000 cesura \
  && useradd --uid 1000 --gid 1000 --no-create-home --home-dir /tmp --shell /usr/sbin/nologin cesura \
- && mkdir -p /app/config && chown cesura:cesura /app/config
+ && mkdir -p /app/config /app/cache && chown cesura:cesura /app/config /app/cache
 COPY app/ app/
 COPY static/ static/
 # Readable by the app user whatever the builder's umask was.

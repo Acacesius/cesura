@@ -5,7 +5,7 @@ const params = new URLSearchParams(location.search);
 const key = params.get("key") || localStorage.getItem("cesura.hostkey");
 if (params.get("key")) { localStorage.setItem("cesura.hostkey", params.get("key")); history.replaceState(null, "", "/host"); }
 const K = encodeURIComponent(key || "");
-let state = null, shownCode = null, artQid;
+let state = null, shownCode = null, artQid, renderedQkey = null;
 
 // Host actions carry the key in a header, never in the URL.
 const hostPost = (path, body = {}) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Host-Key": key }, body: JSON.stringify(body) });
@@ -18,7 +18,11 @@ function connect() {
   live = liveSocket({
     banner: $("conn"),
     open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/host?key=${K}`),
-    onMessage: (m) => { if (m.type === "state") apply(m); },
+    onMessage: (m) => {
+      if (m.type !== "state" && m.type !== "patch") return;
+      const s = applyPatch(state, m);
+      if (s) apply(s); else live.send({ type: "resync" });
+    },
     onClose: (e) => {
       if (e.code === 4003) { localStorage.removeItem("cesura.hostkey"); askForKey("That host key didn't work."); return true; }
       if (e.code === 4002) { $("p-live").replaceChildren(el("span", { class: "dot warn" }), "Opened in another tab"); return true; }
@@ -39,6 +43,7 @@ const HEALTH = {
 };
 
 function apply(s) {
+  const prev = state;
   state = s;
   clockOffset = s.server_time - Date.now() / 1000;
   const h = s.host, n = s.now, e = h.engine, hl = e.health;
@@ -80,19 +85,24 @@ function apply(s) {
   $("st-drift").textContent = h.stats.median_drift_ms == null ? "–" : `${h.stats.median_drift_ms} ms`;
   $("st-peak").textContent = h.stats.peak_listeners;
   $("feed").replaceChildren(...(h.feed.length ? h.feed.slice(0, 10).map((f) => el("div", { class: "fe" },
-    el("span", { class: "ellip" }, el("b", { textContent: f.who }), ` ${f.text}`), el("span", { class: "ago", textContent: ago(f.ago) })))
+    el("span", { class: "ellip" }, el("b", { textContent: f.who }), ` ${f.text}`), el("span", { class: "ago", textContent: ago(serverNow() - f.at) })))
     : [el("div", { class: "empty", textContent: "Who queued, skipped, paused and resumed shows up here." })]));
 
   // queue
   $("q-count").textContent = `${s.queue.length} song${s.queue.length === 1 ? "" : "s"}`;
   segs($("q-sub"), [s.queue.length ? `${totalMin(s.queue)} min` : null, "guests take turns", s.radio ? "then autoplay radio" : "radio off"]);
   $("q-hdr").classList.toggle("hidden", !s.queue.length);
-  const rows = s.queue.map((t, i) => qrow(t, i, e));
-  $("queue").replaceChildren(...(rows.length ? rows : [emptyState("queue", "Nothing queued", "Search above to add songs, or share the code so guests can.")]));
-  if (rows.length) touchQueue(rows, { onRemove: (qid) => remove(s.queue.find((t) => t.qid === qid)), onMove: move });
+  // Rebuild the rows only when the queue (or the CACHED tag) changed: patches keep an unchanged queue identical.
+  const qkey = `${e.next_qid}|${e.next}`;
+  if (!prev || prev.queue !== s.queue || qkey !== renderedQkey) {
+    renderedQkey = qkey;
+    const rows = s.queue.map((t, i) => qrow(t, i, e));
+    $("queue").replaceChildren(...(rows.length ? rows : [emptyState("queue", "Nothing queued", "Search above to add songs, or share the code so guests can.")]));
+    if (rows.length) touchQueue(rows, { onRemove: (qid) => remove(s.queue.find((t) => t.qid === qid)), onMove: move });
+  }
   segs($("radio-sub"), s.radio ? ["Plays when the queue runs out", n ? `seeded from ${n.title}` : null] : ["Off. The room goes quiet when the queue runs out."]);
   $("radio-btn").textContent = s.radio ? "Turn off" : "Turn on";
-  $("auto").replaceChildren(...s.auto.slice(0, 6).map((t) => autorow(t, e)));
+  if (!prev || prev.auto !== s.auto) $("auto").replaceChildren(...s.auto.slice(0, 6).map((t) => autorow(t, e)));
 
   // room code, QR, lock
   if (s.code !== shownCode) {
@@ -348,7 +358,7 @@ $("add-form").addEventListener("submit", async (e) => {
   const d = await r.json();
   if (d.open) return addCollection("playlist", d.open.id, "linked playlist");
   box.replaceChildren(...(d.results.length ? d.results.map((x) => el("div", { class: "trow" },
-    x.kind === "song" ? art(x) : x.thumb ? el("img", { class: "art", src: x.thumb, alt: "" }) : el("div", { class: "art art-ph" }),
+    x.kind === "song" ? art(x) : x.thumb ? el("img", { class: "art", src: artUrl(x.thumb), alt: "", loading: "lazy" }) : el("div", { class: "art art-ph" }),
     el("div", { class: "grow" }, el("div", { class: "t ellip", textContent: x.title }),
       el("div", { class: "s ellip", textContent: x.kind === "song" ? [x.artists, x.duration && fmt(x.duration)].filter(Boolean).join(" · ") : `${x.kind === "album" ? "Album" : "Playlist"} · ${x.subtitle}` })),
     el("div", { class: "acts" }, x.kind === "song"

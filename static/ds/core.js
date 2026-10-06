@@ -87,9 +87,11 @@ function avatarStack(names, max = 3) {
   return s;
 }
 
-function art(t, cls = "art") {
+// Artwork comes from the server's cache (/art/<id>) at the size asked for: small for list rows.
+const artUrl = (thumb, px = 120) => (thumb ? `${thumb}${thumb.includes("?") ? "&" : "?"}s=${px}` : null);
+function art(t, cls = "art", px = cls === "art" ? 120 : 544) {
   if (!t || !t.thumb) return el("div", { class: `${cls} art-ph` });
-  return el("img", { class: cls, src: t.thumb, alt: "", loading: "lazy", onerror: (e) => e.target.replaceWith(el("div", { class: `${cls} art-ph` })) });
+  return el("img", { class: cls, src: artUrl(t.thumb, px), alt: "", loading: "lazy", decoding: "async", onerror: (e) => e.target.replaceWith(el("div", { class: `${cls} art-ph` })) });
 }
 
 let toastTimer;
@@ -107,7 +109,7 @@ function setMediaSession(n, handlers, playing) {
   if (!("mediaSession" in navigator)) return;
   const ms = navigator.mediaSession;
   ms.metadata = n ? new MediaMetadata({ title: n.title, artist: n.artists || "", album: n.album || "cesura",
-    artwork: n.thumb ? [{ src: n.thumb, sizes: "400x400", type: "image/jpeg" }] : [] }) : null;
+    artwork: n.thumb ? [{ src: new URL(artUrl(n.thumb, 544), location.href).href, sizes: "544x544", type: "image/jpeg" }] : [] }) : null;
   try { ms.playbackState = !n ? "none" : playing ? "playing" : "paused"; } catch {}
   if (handlers && !setMediaSession.wired) {
     setMediaSession.wired = true;
@@ -159,6 +161,30 @@ function liveSocket({ open, onOpen = () => {}, onMessage, onClose = () => false,
     stop: () => { stopped = true; clearTimeout(timer); clearTimeout(shownAt); showBanner(false); if (ws) { ws.onclose = null; ws.close(); ws = null; } },
     get open() { return !!ws && ws.readyState === 1; },
   };
+}
+
+// ---- state over the socket: a full "state" on connect, then "patch" messages (see app/delta.py).
+// Returns the new state, or null when this client missed a version and must ask for a resync.
+// Unchanged parts keep their identity (s.queue === old.queue when the queue didn't change).
+function applyPatch(state, m) {
+  if (m.type === "state") return m;
+  if (!state) return null;
+  const s = { ...state, ...(m.set || {}) };
+  for (const k of m.del || []) delete s[k];
+  if (m.q) {
+    if (m.q.base !== state.qver) return null;
+    s.queue = applyQueue(state.queue, m.q);
+  } else if (m.qver !== state.qver) return null;
+  s.qver = m.qver;
+  return s;
+}
+// Queue edits: drop rm + every qid in put, then insert the put entries in order.
+function applyQueue(old, { rm, put }) {
+  const by = new Map(old.map((t) => [t.qid, t]));
+  const gone = new Set([...rm, ...put.map(([, x]) => (typeof x === "string" ? x : x.qid))]);
+  const out = old.filter((t) => !gone.has(t.qid));
+  for (const [i, x] of put) out.splice(i, 0, typeof x === "string" ? by.get(x) : x);
+  return out;
 }
 
 // ---- loading + empty states

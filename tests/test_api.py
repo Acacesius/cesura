@@ -226,7 +226,8 @@ def test_attribution_feed_and_queue_items(client):
     assert [(e["who"], e["kind"]) for e in feed[:3]] == [("Host", "resume"), ("Sam", "pause"), ("Sam", "queue")]
     assert main.room.queue[0]["by"] == "Sam"
     snap = main.room.snapshot(main.room.people.devices["device-aaaa"])
-    assert snap["queue"][0]["mine"] and "owner" not in snap["queue"][0]
+    item = main.room.public(main.room.queue[0])
+    assert item["oid"] == snap["me"]["oid"] and "owner" not in item and "device-aaaa" not in str(item)
     assert snap["hands"]["text"] == "Resumed by Host"
 
 

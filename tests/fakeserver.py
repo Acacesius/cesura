@@ -82,9 +82,14 @@ def fake_upstream(size: int) -> int:
     import socketserver
     import threading
 
+    import functools
+    body_of = functools.lru_cache(8)(lambda vid: tone(vid).ljust(size, b"\0"))
+
     class Upstream(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"  # keep-alive, like googlevideo
+
         def do_GET(self):
-            body = tone(self.path.split("?")[0].strip("/")).ljust(size, b"\0")
+            body = body_of(self.path.split("?")[0].strip("/"))
             start, end = 0, size - 1
             if (r := self.headers.get("Range", "")).startswith("bytes="):
                 a, b = r[6:].split("-")

@@ -19,6 +19,7 @@ from yt_dlp import YoutubeDL
 from ytmusicapi import OAuthCredentials, YTMusic
 
 from . import cookies as cookiejar
+from .artcache import art
 from .netstats import net
 
 log = logging.getLogger("cesura.media")
@@ -37,6 +38,27 @@ UPSTREAM_CHUNK = 2 * 1024 * 1024
 # Very long uploads (hour-long mixes) fall back to per-request proxying.
 MEM_MAX_BYTES = 150 * 1024 * 1024
 MEM_TRACKS = 4  # current + next + a couple recently played
+# Downloads run one at a time, paced to DOWNLOAD_RATE (MB/s, 0 = unlimited) so one track
+# can't fill the uplink. Paced downloads use small Range requests: a big one would still
+# arrive at full speed into the socket buffer, whatever pace we read it at.
+DOWNLOAD_RATE = float(os.environ.get("DOWNLOAD_RATE", "2") or 0) * 1024 * 1024
+PACED_CHUNK = 256 * 1024
+
+
+class Throttle:
+    """Paces reads to `rate` bytes per second across every download."""
+
+    def __init__(self, rate: float):
+        self.rate = rate
+        self.free_at = 0.0  # monotonic time by which the bytes taken so far are "paid for"
+
+    async def take(self, n: int):
+        if self.rate <= 0:
+            return
+        now = time.monotonic()
+        self.free_at = max(self.free_at, now) + n / self.rate
+        if (wait := self.free_at - now - 0.05) > 0:
+            await asyncio.sleep(wait)
 
 
 # ---------------------------------------------------------------- ytmusicapi
@@ -70,10 +92,10 @@ def cookie_ytmusic(path: str = COOKIES) -> YTMusic:
 
 
 def _thumb(thumbs) -> str | None:
+    """The track's artwork as a local /art/ path: clients load it from us, not from Google (see artcache.py)."""
     if not thumbs:
         return None
-    url = thumbs[-1]["url"]
-    return re.sub(r"=w\d+-h\d+", "=w400-h400", url)  # lh3 URLs resize on request
+    return art.register(thumbs[-1]["url"])
 
 
 def _secs(text) -> int | None:
@@ -175,6 +197,10 @@ class Resolver:
         self.locks: dict[str, asyncio.Lock] = {}
         self.http = httpx.AsyncClient(timeout=httpx.Timeout(15, read=30), follow_redirects=True)
         self.media: OrderedDict[str, asyncio.Task] = OrderedDict()
+        self.current: str | None = None   # the track the room is playing: never cancelled, never waits on a prefetch
+        self.slot = asyncio.Lock()        # one download at a time
+        self.throttle = Throttle(DOWNLOAD_RATE)
+        self.chunk = PACED_CHUNK if DOWNLOAD_RATE > 0 else UPSTREAM_CHUNK
         # Cookies stopped working: a lookup hit YouTube's "Sign in to confirm you're
         # not a bot", or the link probe found the session signed out. Cleared by a new upload.
         self.bot_check = False
@@ -202,17 +228,34 @@ class Resolver:
             return "resolving"
         return "failed" if task.cancelled() or task.exception() else "cached"
 
-    def load(self, video_id: str) -> asyncio.Task:
-        """Resolve + download a track into RAM once; every caller awaits the same task."""
+    def load(self, video_id: str, prefetch: bool = False) -> asyncio.Task:
+        """Resolve + download a track into RAM once; every caller awaits the same task.
+
+        prefetch=False is the track the room plays now. Any other unfinished download
+        (a prefetch the queue has moved past) is cancelled, so at most the current
+        track and the one after it are ever fetched, and the current one never waits.
+        """
+        if not prefetch:
+            self.current = video_id
+        for vid, t in list(self.media.items()):
+            if vid not in (video_id, self.current) and not t.done():
+                t.cancel()
+                del self.media[vid]
+                log.info("cancelled download of %s: no longer next", vid)
         task = self.media.get(video_id)
         if task and not (task.done() and (task.cancelled() or task.exception())):
             self.media.move_to_end(video_id)
             return task
-        task = asyncio.create_task(self._download(video_id))
+        task = asyncio.create_task(self._download_one(video_id))
         self.media[video_id] = task
         while len(self.media) > MEM_TRACKS:
-            self.media.popitem(last=False)
+            _, old = self.media.popitem(last=False)
+            old.cancel()
         return task
+
+    async def _download_one(self, video_id: str) -> Media:
+        async with self.slot:
+            return await self._download(video_id)
 
     async def _download(self, video_id: str) -> Media:
         r = await self.get(video_id)
@@ -275,7 +318,8 @@ class Resolver:
         pos, retried = start, False
         while pos <= end:
             r = await self.get(video_id)
-            stop = min(pos + UPSTREAM_CHUNK - 1, end)
+            stop = min(pos + self.chunk - 1, end)
+            await self.throttle.take(stop - pos + 1)
             before = pos
             try:
                 async with self.http.stream("GET", r.url, headers={**r.headers, "Range": f"bytes={pos}-{stop}"}) as resp:

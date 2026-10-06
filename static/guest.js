@@ -119,7 +119,10 @@ function connect() {
       if (pocket) send({ type: "pocket", on: true });
     },
     onMessage: (m) => {
-      if (m.type === "state") render(m);
+      if (m.type === "state" || m.type === "patch") {
+        const s = applyPatch(state, m);
+        if (s) render(s); else send({ type: "resync" });
+      }
       else if (m.type === "pong") onPong(m);
       else if (m.type === "hb") send({ type: "hb" });
       else if (m.type === "welcome") { setToken(m.token); if (m.code !== code) setCode(m.code); }
@@ -172,11 +175,14 @@ document.querySelectorAll("[data-ic]").forEach((n) => (n.innerHTML = icon(n.data
 const queuedIds = () => new Set([...(state ? state.queue : []), ...(state && state.now ? [state.now] : [])].map((t) => t.videoId));
 
 const isMod = () => !!(state && state.me && state.me.role === "cohost");
+// Tracks carry an opaque owner id; this device's is in state.me.
+const mine = (t) => !!(t && t.oid && state && state.me && t.oid === state.me.oid);
 
 function render(s) {
   if (!state) clockOffset = s.server_time - Date.now() / 1000; // until the first pong
-  const trackChanged = !state || (state.now && state.now.qid) !== (s.now && s.now.qid);
-  const libChanged = !state || state.library !== s.library;
+  const prev = state;
+  const trackChanged = !prev || (prev.now && prev.now.qid) !== (s.now && s.now.qid);
+  const libChanged = !prev || prev.library !== s.library;
   state = s;
   document.querySelectorAll("[data-people]").forEach((n) => n.replaceChildren(avatarStack(s.people)));
   $("notice").textContent = s.notice || "";
@@ -191,7 +197,7 @@ function render(s) {
   }
   setMediaSession(n, mediaHandlers, s.status === "playing");
   $("np-title").textContent = n ? n.title : "Nothing playing yet";
-  $("np-sub").textContent = n ? [n.artists, n.mine ? "added by you" : n.by ? `added by ${n.by}` : n.auto ? "from radio" : null].filter(Boolean).join(" · ") : "Add a song to get the room going";
+  $("np-sub").textContent = n ? [n.artists, mine(n) ? "added by you" : n.by ? `added by ${n.by}` : n.auto ? "from radio" : null].filter(Boolean).join(" · ") : "Add a song to get the room going";
   $("np-hands").textContent = s.hands ? s.hands.text : "";
   $("np-hands").classList.toggle("hidden", !s.hands);
   $("pause").disabled = !n || s.status === "loading";
@@ -206,26 +212,36 @@ function render(s) {
   $("pocket").checked = pocket;
   const nx = s.queue[0] || s.auto[0];
   $("upnext").classList.toggle("hidden", !nx);
-  if (nx) $("upnext").replaceChildren(art(nx), el("div", { class: "grow" },
-    el("div", { class: "k ellip", textContent: `Up next · ${nx.mine ? "you" : nx.by || (nx.auto ? "radio" : "")}` }),
+  if (nx && (!prev || (prev.queue[0] || prev.auto[0]) !== nx || prev.me !== s.me)) $("upnext").replaceChildren(art(nx), el("div", { class: "grow" },
+    el("div", { class: "k ellip", textContent: `Up next · ${mine(nx) ? "you" : nx.by || (nx.auto ? "radio" : "")}` }),
     el("div", { class: "t ellip", textContent: nx.title }), el("div", { class: "s ellip", textContent: nx.artists })), ic("chevron"));
 
   // Queue
   $("q-count").replaceChildren(ic("people"), ` ${s.listeners}`);
   $("q-now").classList.toggle("hidden", !n);
-  if (n) {
+  if (n && (trackChanged || prev.status !== s.status || prev.me !== s.me)) {
     $("q-now").replaceChildren(
       el("div", { class: "row" }, art(n), el("div", { class: "grow" }, el("div", { class: "k", textContent: s.status === "paused" ? "PAUSED" : "NOW PLAYING" }),
-        el("div", { class: "t ellip", textContent: n.title }), el("div", { class: "s ellip", textContent: [n.artists, n.by ? `added by ${n.mine ? "you" : n.by}` : null].filter(Boolean).join(" · ") })),
+        el("div", { class: "t ellip", textContent: n.title }), el("div", { class: "s ellip", textContent: [n.artists, n.by ? `added by ${mine(n) ? "you" : n.by}` : null].filter(Boolean).join(" · ") })),
         el("span", { class: "mono faint", style: "font-size:12px", id: "q-now-time" })),
       el("div", { class: "thin" }, el("div", { id: "q-now-bar" })));
   }
+  // The lists below only rebuild when what they show changed (patches keep unchanged parts identical).
+  const listsChanged = !prev || prev.queue !== s.queue || prev.auto !== s.auto || prev.played !== s.played || prev.radio !== s.radio || prev.me !== s.me;
+  if (listsChanged) renderLists(s, mod);
+  if (!$("people-sheet").classList.contains("hidden")) renderPeople();
+  if (libChanged && !$("lib-list-view").classList.contains("hidden")) renderHostLib();
+  if (listsChanged) refreshQueuedMarks();
+  steer();
+}
+
+function renderLists(s, mod) {
   $("q-head").textContent = s.queue.length ? `Up next · ${s.queue.length} song${s.queue.length > 1 ? "s" : ""} · ${totalMin(s.queue)} min${mod ? " · swipe to remove, hold to move" : ""}` : "Up next";
   const qrows = s.queue.map((t, i) => {
     const row = trow(t, {
       tag: i === 0 ? el("span", { class: "tag", textContent: "NEXT" }) : t.pinned ? el("span", { class: "tag amber", textContent: "PINNED" }) : null,
-      right: t.mine || mod ? el("button", { class: "iconbtn", html: icon("x"), ariaLabel: `Remove ${t.title}`, onclick: () => removeTrack(t) }) : avatar(t.by || (t.auto ? "Radio" : "?")),
-      sub: t.by ? `${t.mine ? "you" : t.by}` : null,
+      right: mine(t) || mod ? el("button", { class: "iconbtn", html: icon("x"), ariaLabel: `Remove ${t.title}`, onclick: () => removeTrack(t) }) : avatar(t.by || (t.auto ? "Radio" : "?")),
+      sub: t.by ? `${mine(t) ? "you" : t.by}` : null,
     });
     row.dataset.qid = t.qid;
     return row;
@@ -238,11 +254,6 @@ function render(s) {
   $("auto").replaceChildren(...s.auto.slice(0, 6).map((t) => trow(t, { weight: 500, right: addBtn(t) })));
   $("played-block").classList.toggle("hidden", !s.played.length);
   $("played").replaceChildren(...s.played.slice(0, 8).map((t) => trow(t, { weight: 500, right: addBtn(t, "replay") })));
-
-  if (!$("people-sheet").classList.contains("hidden")) renderPeople();
-  if (libChanged && !$("lib-list-view").classList.contains("hidden")) renderHostLib();
-  refreshQueuedMarks();
-  steer();
 }
 
 function trow(t, { tag = null, right = null, weight = 600, extra = null, sub = null } = {}) {
@@ -550,7 +561,7 @@ async function runSearch() {
     if (!items.length) continue;
     out.push(el("div", { class: "sechead", textContent: label }), el("div", { class: "cards" }, ...items.slice(0, kind === "all" ? 4 : 20).map((a) =>
       el("button", { class: "acard", onclick: () => openCollection(a.kind, a.id) },
-        a.thumb ? el("img", { class: "cover", src: a.thumb, alt: "", loading: "lazy" }) : el("div", { class: "cover art-ph" }),
+        a.thumb ? el("img", { class: "cover", src: artUrl(a.thumb, 240), alt: "", loading: "lazy" }) : el("div", { class: "cover art-ph" }),
         el("div", { class: "t ellip", textContent: a.title }), el("div", { class: "s ellip", textContent: a.subtitle })))));
   }
   $("results").replaceChildren(...out);
@@ -576,7 +587,7 @@ async function openCollection(k, id) {
   const c = await r.json();
   $("coll-title").textContent = c.title;
   $("coll-sub").textContent = c.subtitle;
-  if (c.thumb) $("coll-art").src = c.thumb;
+  if (c.thumb) $("coll-art").src = artUrl(c.thumb, 240);
   const ids = c.tracks.map((t) => t.videoId).slice(0, 50);
   const addAll = $("coll-add");
   addAll.classList.toggle("hidden", !ids.length);
@@ -662,7 +673,7 @@ async function renderHostLib() {
     libData = await r.json();
   }
   const row = (p, iconName) => el("button", { class: "lrow-btn", onclick: () => openLibPlaylist(p.id) },
-    p.thumb ? el("img", { class: "art", src: p.thumb, alt: "", loading: "lazy" }) : el("span", { class: "art art-ic", html: icon(iconName) }),
+    p.thumb ? el("img", { class: "art", src: artUrl(p.thumb), alt: "", loading: "lazy" }) : el("span", { class: "art art-ic", html: icon(iconName) }),
     el("div", { class: "grow" }, el("div", { class: "t ellip", textContent: p.title }), p.subtitle ? el("div", { class: "s ellip", textContent: p.subtitle }) : null), ic("chevron"));
   box.replaceChildren(...[el("div", { class: "sechead", textContent: "HOST'S LIBRARY" }),
     el("div", { class: "rows" }, row({ ...libData.liked, subtitle: "Songs the host liked" }, "heart"), ...libData.playlists.map((p) => row(p, "library"))),
@@ -708,7 +719,7 @@ async function showSheetFrom(request) {
   const c = await r.json();
   $("lib-title").textContent = c.title;
   $("lib-sub").textContent = c.subtitle;
-  if (c.thumb) $("lib-art").src = c.thumb;
+  if (c.thumb) $("lib-art").src = artUrl(c.thumb, 240);
   const all = c.tracks.map((t) => t.videoId);
   const btn = $("lib-add");
   btn.classList.toggle("hidden", !all.length);

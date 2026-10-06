@@ -46,6 +46,15 @@ class Client:
                     self.ws.send('{"type":"hb"}')
                 elif m.get("type") == "state":
                     self.last_state = m
+                elif m.get("type") == "patch" and self.last_state:  # follow patches (see app/delta.py)
+                    s = {**self.last_state, **m.get("set", {})}
+                    if q := m.get("q"):
+                        by = {t["qid"]: t for t in s["queue"]}
+                        gone = set(q["rm"]) | {x if isinstance(x, str) else x["qid"] for _, x in q["put"]}
+                        s["queue"] = [t for t in s["queue"] if t["qid"] not in gone]
+                        for i, x in q["put"]:
+                            s["queue"].insert(i, by[x] if isinstance(x, str) else x)
+                    self.last_state = s
         except Exception:
             pass
 
