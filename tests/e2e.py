@@ -383,6 +383,25 @@ def main():
         host.click("#like")
         check("like: pressing again un-likes", lambda: expect(host.locator("#like")).to_have_attribute("aria-pressed", "false", timeout=5000))
 
+        # Artist panel: on a wide screen, the current artist's name (and image / bio, or a quiet fallback); never on a phone.
+        desk_ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+        desk = page_for(desk_ctx, "desk")
+        cur_code = host.locator("#codebox").inner_text().replace("\n", "")
+        desk.goto(f"{base}/?code={cur_code}")
+        desk.fill("#name-input", "Desk")
+        desk.click("#join-btn")
+        check("artist panel on a wide screen: name plus bio or a quiet fallback", lambda: (
+            expect(desk.locator("#artist")).to_be_visible(timeout=10000),
+            expect(desk.locator("#ap-name")).not_to_be_empty(timeout=10000),
+            expect(desk.locator("#ap-desc")).not_to_be_empty(timeout=10000)))
+        if a.shots:
+            desk.wait_for_timeout(1500)
+            desk.screenshot(path=f"{a.shots}/guest-desktop.png")
+        check("artist panel: hidden on a phone", lambda: expect(maya.locator("#artist")).to_be_hidden())
+        desk.set_viewport_size({"width": 900, "height": 900})
+        check("artist panel: hides when the window narrows", lambda: expect(desk.locator("#artist")).to_be_hidden(timeout=3000))
+        desk_ctx.close()
+
         # Tap targets: everything interactive on the phone screens is at least 44px in both directions (or wraps a 44px area).
         def small_targets(pg):
             return pg.evaluate("""() => [...document.querySelectorAll('button, a, input:not([type=checkbox]):not([type=range]), label.switch, [role=button]')]

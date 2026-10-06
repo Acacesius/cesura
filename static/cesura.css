@@ -336,3 +336,18 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 .like[aria-pressed=true] { color: var(--amber); border-color: var(--amber-line); }
 .like[aria-pressed=true] svg.i path { fill: currentColor; }
 .like.busy { opacity: .6; }
+
+/* ================= artist panel (guest, wide screens) ================= */
+.artist-panel { display: none; }
+@media (min-width: 1100px) {
+  .artist-panel:not(.hidden) { display: flex; position: fixed; left: 0; top: 0; bottom: 0; width: calc((100vw - 520px) / 2); align-items: flex-end; padding: 56px 48px; overflow: hidden; pointer-events: none; }
+  .ap-bg { position: absolute; inset: 0; background: var(--ground) center / cover no-repeat; opacity: .3; transition: opacity .4s ease-out;
+    -webkit-mask-image: linear-gradient(to right, #000 35%, transparent 100%), linear-gradient(to top, #000 50%, transparent);
+    mask-image: linear-gradient(to right, #000 35%, transparent 100%); }
+  .ap-bg.none { background: radial-gradient(ellipse at 30% 60%, var(--accent-line), transparent 65%); opacity: .45; }
+  .ap-body { position: relative; max-width: 440px; pointer-events: auto; }
+  .ap-body .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; color: var(--accent); }
+  .ap-name { margin: 10px 0 0; font-size: clamp(28px, 3vw, 44px); font-weight: 700; letter-spacing: -.02em; line-height: 1.05; overflow-wrap: anywhere; }
+  .ap-desc { margin: 14px 0 0; font-size: 15px; line-height: 1.55; color: var(--muted); }
+  .ap-desc.quiet { color: var(--faint); font-size: 14px; }
+}

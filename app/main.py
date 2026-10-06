@@ -614,6 +614,9 @@ fail_log: dict[str, deque] = {}
 search_cache: dict[str, dict] = {}  # videoId -> track, from searches/albums/playlists/radio
 library_cache = TTLCache(600, 60)   # the host's playlist list and playlists, 10 minutes
 lyrics_cache = TTLCache(6 * 3600, 200)
+artist_cache = TTLCache(24 * 3600, 500)  # per artist: a queue full of one band asks YouTube once
+artist_misses = TTLCache(600, 500)       # failed lookups: retried after 10 minutes, not on every song
+artist_locks: dict[str, asyncio.Lock] = {}
 # YouTube link health: OK (Premium, 256k), degraded (signed in, no Premium or no 256k), failed.
 health: dict = {"state": "unknown", "checked_at": None, "account": None, "premium": None, "aac256": None,
                 "problem": None, "expires": None}
@@ -1125,6 +1128,52 @@ async def lyrics(videoId: str, code: str, request: Request):
             log.info("lyrics for %s failed: %s", videoId, type(e).__name__)
             raise HTTPException(502, "couldn't load lyrics")
         lyrics_cache.put(videoId, got)
+    return got
+
+
+ARTIST_ID = re.compile(r"UC[A-Za-z0-9_-]{22}")
+BIO_MAX = 280
+
+
+def short_bio(text: str | None, limit: int = BIO_MAX) -> str | None:
+    """A few sentences: whole sentences when they fit, else cut at a word with an ellipsis."""
+    text = re.sub(r"\s*From Wikipedia.*$", "", text or "", flags=re.S | re.I)  # YouTube's attribution footer
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text or None
+    cut = text[:limit]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    if end > limit * 0.5:
+        return cut[:end + 1]
+    return cut.rsplit(" ", 1)[0].rstrip(",;:-–") + "…"
+
+
+@app.get("/api/artist")
+async def artist(id: str, code: str, request: Request):
+    """Name, image and a short bio for the artist panel (wide screens). From ytmusicapi get_artist,
+    cached per artist. A lookup that fails answers with empty fields; the page shows a quiet fallback."""
+    require_code(request, code)
+    if not ARTIST_ID.fullmatch(id):
+        raise HTTPException(400, "bad artist id")
+    if (got := artist_cache.get(id) or artist_misses.get(id)) is not None:
+        return got
+    lock = artist_locks.setdefault(id, asyncio.Lock())
+    async with lock:  # two phones asking at once: one lookup
+        if (got := artist_cache.get(id) or artist_misses.get(id)) is not None:
+            return got
+        limit_lookups(request)
+        try:
+            a = await asyncio.to_thread(ytm.get_artist, id)
+        except Exception as e:
+            log.info("artist %s failed: %s", id, type(e).__name__)
+            got = {"id": id, "name": None, "description": None, "art": None}
+            artist_misses.put(id, got)
+        else:
+            thumbs = a.get("thumbnails") or []
+            got = {"id": id, "name": a.get("name"), "description": short_bio(a.get("description")),
+                   "art": art.register(thumbs[-1]["url"], wide=True) if thumbs else None}
+            artist_cache.put(id, got)
+    artist_locks.pop(id, None)
     return got
 
 

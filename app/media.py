@@ -116,6 +116,7 @@ def to_track(item: dict, album: str | None = None, thumb: str | None = None) -> 
     if not vid:
         return None
     alb = item.get("album")
+    artist_id = next((a["id"] for a in item.get("artists") or [] if str(a.get("id") or "").startswith("UC")), None)
     return {
         "videoId": vid,
         "title": item.get("title") or "Unknown",
@@ -123,6 +124,7 @@ def to_track(item: dict, album: str | None = None, thumb: str | None = None) -> 
         "album": alb if isinstance(alb, str) else (alb or {}).get("name") or album,
         "duration": item.get("duration_seconds") or _secs(item.get("duration") or item.get("length")),
         "thumb": _thumb(item.get("thumbnails") or item.get("thumbnail")) or thumb,
+        "artistId": artist_id,  # for the artist panel (get_artist)
     }
 
 
@@ -137,6 +139,7 @@ def song_to_track(song: dict) -> dict | None:
         "album": None,
         "duration": int(d["lengthSeconds"]) if d.get("lengthSeconds") else None,
         "thumb": _thumb((d.get("thumbnail") or {}).get("thumbnails")),
+        "artistId": d.get("channelId") if str(d.get("channelId") or "").startswith("UC") else None,
     }
 
 

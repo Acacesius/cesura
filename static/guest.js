@@ -91,6 +91,7 @@ function leave(msg) {
   audio.removeAttribute("src");
   if (live) { live.stop(); live = null; }
   $("room").classList.add("hidden");
+  $("artist").classList.add("hidden");
   $("join").classList.remove("hidden");
   $("join-err").textContent = msg || "";
 }
@@ -192,6 +193,7 @@ function render(s) {
   // Now playing
   const n = s.now;
   if (trackChanged) {
+    renderArtist();
     $("np-art").replaceChildren(n ? art(n, "") : el("div", { class: "art-ph" }));
     if (!$("lyrics-sheet").classList.contains("hidden")) showLyrics();
   }
@@ -633,6 +635,39 @@ async function openCollection(k, id) {
   addAll.onclick = async () => { if (await addTracks(ids)) { addAll.disabled = true; addAll.replaceChildren(ic("check"), "Added to the queue"); } };
   $("coll-tracks").replaceChildren(...(c.tracks.length ? c.tracks.map(songRow) : [emptyState("queue", "This one's empty")]));
 }
+
+// ---- artist panel: on wide screens, the current artist's image (large, faded), name and a short bio,
+// in the empty space left of the room. Phones never fetch it. Cached per artist here and on the server.
+const wide = matchMedia("(min-width: 1100px)");
+const artists = new Map();
+let artistKey = null;
+async function renderArtist() {
+  const n = state && state.now, box = $("artist");
+  box.classList.toggle("hidden", !n || !code || !wide.matches);
+  if (!n || !code || !wide.matches) { artistKey = null; return; }
+  const key = n.artistId || `name:${n.artists}`;
+  if (key === artistKey) return;
+  artistKey = key;
+  const show = (a) => {
+    if (artistKey !== key) return;
+    $("ap-name").textContent = (a && a.name) || (n.artists || "").split(", ")[0] || "Unknown artist";
+    const bio = a && a.description;
+    $("ap-desc").textContent = bio || "No bio on YouTube Music for this artist.";
+    $("ap-desc").classList.toggle("quiet", !bio);
+    $("ap-bg").classList.toggle("none", !(a && a.art));
+    $("ap-bg").style.backgroundImage = a && a.art ? `url("${artUrl(a.art, 1200)}")` : "";
+  };
+  show(null);
+  if (!n.artistId) return;
+  let a = artists.get(n.artistId);
+  if (!a) {
+    const r = await api(`/api/artist?id=${encodeURIComponent(n.artistId)}&code=${encodeURIComponent(code)}`).catch(() => null);
+    a = r && r.ok ? await r.json() : null;
+    if (a) artists.set(n.artistId, a);
+  }
+  show(a);
+}
+wide.addEventListener("change", () => { artistKey = null; renderArtist(); });
 
 // ---- lyrics (from YouTube Music; cached on the server per song)
 const lyricsCache = new Map();

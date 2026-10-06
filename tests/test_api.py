@@ -413,3 +413,38 @@ def test_like_is_host_only_reports_errors_and_unlikes(client, monkeypatch):
     monkeypatch.setattr(main, "cookie_ytmusic", lambda path=None: FakeYT(fail=True))
     r = client.post("/api/host/like", json={"videoId": vid, "on": True}, headers=H)
     assert r.status_code == 502 and "Nothing was changed" in r.json()["detail"] and room.liked[vid] is False
+
+
+def test_artist_is_cached_per_artist_trimmed_and_fails_quietly(client, monkeypatch):
+    main.artist_cache.clear()
+    main.artist_misses.clear()
+    calls = []
+    bio = "Daft Punk were a French electronic music duo. " * 12 + "From Wikipedia (https://en.wikipedia.org/wiki/Daft_Punk)"
+
+    def get_artist(cid):
+        calls.append(cid)
+        if cid.endswith("bad"):
+            raise RuntimeError("nope")
+        return {"name": "Daft Punk", "description": bio, "thumbnails": [{"url": "https://lh3.googleusercontent.com/abc=w540-h225-p-l90-rj"}]}
+    monkeypatch.setattr(main.ytm, "get_artist", get_artist)
+    good, bad = "UC" + "a" * 22, "UC" + "b" * 19 + "bad"
+    q = lambda cid, code=None: client.get(f"/api/artist?id={cid}&code={code or main.room.code}")
+    a = q(good).json()
+    assert a["name"] == "Daft Punk" and a["art"].startswith("/art/")
+    assert len(a["description"]) <= main.BIO_MAX and a["description"].endswith(".") and "Wikipedia" not in a["description"]
+    for _ in range(5):  # a queue full of one band: one lookup
+        assert q(good).json() == a
+    assert calls == [good]
+    b = q(bad).json()
+    assert b == {"id": bad, "name": None, "description": None, "art": None}
+    q(bad)
+    assert calls == [good, bad]   # the miss is remembered too
+    assert q(good, "WRONG").status_code == 403
+    assert q("not-an-id").status_code == 400
+    assert main.short_bio("One two three four five six", 12) == "One two…"
+
+
+def test_tracks_carry_artist_id():
+    from app.media import to_track
+    t = to_track({"videoId": "x" * 11, "title": "T", "artists": [{"name": "A", "id": "UC" + "c" * 22}]})
+    assert t["artistId"] == "UC" + "c" * 22
