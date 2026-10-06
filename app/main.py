@@ -63,7 +63,7 @@ def load_host_key() -> str | None:
     return os.environ.get("HOST_KEY", "").strip() or setupstate.stored_host_key()
 
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 HOST_KEY = load_host_key()  # updated by the setup wizard
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
 MAX_QUEUE = 100

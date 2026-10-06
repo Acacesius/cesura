@@ -38,7 +38,7 @@
 You need Docker with the Compose plugin, and a YouTube Music account. Premium gets 256k AAC; without it, 128k.
 
 ```sh
-mkdir -p cesura/config && cd cesura
+mkdir -p cesura/config cesura/cache && cd cesura
 curl -fsSLO https://raw.githubusercontent.com/acacesius/cesura/main/docker-compose.yml
 docker compose up -d && docker compose logs cesura
 ```
@@ -60,7 +60,7 @@ The logs show a box with your **one-time setup token**:
 
 Open `http://127.0.0.1:8765/setup` on the same machine, or through the address you expose it on (see [Exposing it](#exposing-it)). Then paste the token. Lost it? Run `docker compose logs cesura` again: it's printed on every start until setup is done.
 
-> Create `config/` **before** the first `up` (the first command above does). If Docker creates it, it's owned by root, and cesura will print how to fix it.
+> Create `config/` and `cache/` **before** the first `up` (the first command above does). If Docker creates them, they're owned by root, and cesura will print how to fix `config/`.
 
 ## The setup wizard
 
@@ -106,6 +106,17 @@ When the link stops working (YouTube's bot check, or the session got signed out)
 
 **Vote to skip.** A guest's skip is a vote; the button shows the count. The song skips once votes reach the threshold: by default half of the active listeners (rounded up, at least 1). Pocket listeners don't count towards it. The host sets ¼, ½, ¾ or all in Settings. Votes reset when the song changes. The host and co-hosts skip instantly.
 
+**Playback controls.** One transport on Now Playing and the dashboard: back · play · skip.
+- **Seek:** click or drag the progress bar, or focus it and use the arrow keys (5 s; Page Up/Down 30 s). Nothing is sent while you drag; one jump on release. Anyone can seek, like pause, and the room sees who. Pocket mode follows (only the song decoder restarts).
+- **Back:** restarts the song once it has played 3 seconds, otherwise goes to the previous one, even after a skip (the server keeps the last 30). The song you left goes back to the top of the queue. Host and co-hosts, like skip.
+- **Drag to reorder:** the grip on a row, by mouse, touch or arrow keys. Guests move their own songs among their own turns; the host and co-hosts move anything. If someone else moved the queue first, your drag is refused and the list redraws.
+- **Like** (host only): the heart adds the song to your YouTube Music liked songs, which feeds your radio; press again to un-like. If YouTube refuses, you see the error and nothing changes.
+- **Clear** (host only, on the queue card): removes every upcoming song after asking. The current song, the play history and the radio picks stay.
+
+**Themes.** The palette button (guests) or Settings → *Theme* (host): Cesium (default), Sakura, Night sakura, Matcha, Lavender, Ocean, Sunset, Paper and Mono. Each person's pick is kept in their own browser.
+
+**Artist panel.** On a wide screen (1100 px and up), the guest page shows the current artist's image, name and a short bio in the space beside the room. From YouTube Music, cached per artist for a day. Phones never load it.
+
 **Hands on it.** Every song shows who queued it, Now Playing shows who last paused or resumed, and the dashboard keeps a feed of recent actions.
 
 **Listeners and moderation.** Each phone or browser is one listener row, however many tabs or reconnects it has (×2 means two open connections). A phone that drops off shows *Reconnecting* for 30 seconds before it leaves the list. From a listener's row menu, the host can:
@@ -148,7 +159,9 @@ Put these in a `.env` file next to `docker-compose.yml` (copy [`.env.example`](.
 | `HOST_KEY` | *(from setup)* | Host dashboard key. Overrides the wizard's key. |
 | `PROBE_VIDEO_ID` | `BSTsnWoslP4` | Song used by the link check. Change it if that one is unavailable where you are. |
 | `POCKET_CODEC` | `aac` | Pocket mode's stream format: `aac`, or `mp3` if some phones won't play it. |
-| `CESURA_UID` / `CESURA_GID` | `1000` | User the container runs as. It must own `./config`. |
+| `DOWNLOAD_RATE` | `2` | Speed cap for fetching songs from YouTube, in MB/s (`2` ≈ 16 Mbit/s; `0` = no cap). Songs download one at a time (the current one, then the next), so one download can't fill your link. A song nobody prefetched takes about 4 s to start at the default. |
+| `ART_CACHE_MB` | `300` | Size of the artwork cache in `./cache` (album art, artist images). Phones load artwork from cesura, not from Google; the oldest files go first. |
+| `CESURA_UID` / `CESURA_GID` | `1000` | User the container runs as. It must own `./config` and `./cache`. |
 | `YTM_CLIENT_ID` / `YTM_CLIENT_SECRET` | | Only for optional ytmusicapi OAuth (personalised radio). Not needed. |
 
 ## Exposing it
