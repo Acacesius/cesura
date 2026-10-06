@@ -352,6 +352,22 @@ def main():
             expect(theo.locator("#back")).to_be_visible(timeout=3000),
             expect(maya.locator("#back")).to_be_hidden()))
 
+        # Clear queue: host only (a guest's request is refused by the server), asks first, keeps now playing.
+        refused = maya.evaluate("""async () => (await fetch('/api/host/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: localStorage.getItem('cesura.code'), token: localStorage.getItem('cesura.token') }) })).status""")
+        check("clear queue: a guest's request is refused (403)", lambda: refused == 403 or (_ for _ in ()).throw(AssertionError(refused)))
+        playing = host.locator("#np-title").inner_text()
+        asked = []
+        host.once("dialog", lambda d: asked.append(d.message))
+        host.click("#clear-queue")
+        check("clear queue: asks first, empties the queue everywhere, keeps the song playing", lambda: (
+            (asked and "Clear the queue" in asked[0]) or (_ for _ in ()).throw(AssertionError(asked)),
+            expect(host.locator("#queue .qrow")).to_have_count(0, timeout=5000),
+            expect(maya.locator("#queue .trow")).to_have_count(0, timeout=5000),
+            expect(host.locator("#np-title")).to_have_text(playing),
+            expect(host.locator("#feed")).to_contain_text("cleared the queue")))
+        check("clear queue: no button for guests", lambda: expect(maya.locator("#clear-queue")).to_have_count(0))
+
         # Tap targets: everything interactive on the phone screens is at least 44px in both directions (or wraps a 44px area).
         def small_targets(pg):
             return pg.evaluate("""() => [...document.querySelectorAll('button, a, input:not([type=checkbox]):not([type=range]), label.switch, [role=button]')]

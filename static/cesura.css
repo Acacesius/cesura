@@ -150,6 +150,11 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 .host .card-head .label { white-space: nowrap; }
 .host .card-head .count { margin-left: 6px; font-weight: 500; color: var(--text); }
 .host .card-head .label.count { margin: 0; color: var(--muted); }
+.head-r { display: inline-flex; align-items: baseline; gap: 14px; }
+/* small text button with a full 44px hit area that doesn't grow the row */
+.linkbtn { margin: -13px -10px; padding: 13px 10px; font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); border-radius: 10px; }
+.linkbtn:hover { color: var(--text); }
+.linkbtn:disabled { opacity: .4; cursor: default; }
 .np-by { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--faint); }
 .np-by .avatar { width: 20px; height: 20px; font-size: 10px; }
 .host .controls { gap: 8px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }

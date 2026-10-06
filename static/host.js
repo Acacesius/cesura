@@ -92,6 +92,7 @@ function apply(s) {
 
   // queue
   $("q-count").textContent = `${s.queue.length} song${s.queue.length === 1 ? "" : "s"}`;
+  $("clear-queue").disabled = !s.queue.length;
   segs($("q-sub"), [s.queue.length ? `${totalMin(s.queue)} min` : null, "guests take turns", s.radio ? "then autoplay radio" : "radio off"]);
   $("q-hdr").classList.toggle("hidden", !s.queue.length);
   // Rebuild the rows only when the queue (or the CACHED tag) changed: patches keep an unchanged queue identical.
@@ -255,6 +256,13 @@ async function setCohost(l, on) {
 }
 $("pause").addEventListener("click", () => state && roomPost("/api/pause", { paused: state.status !== "paused" }));
 $("skip").addEventListener("click", skipNow);
+// Clear queue (host only, enforced by the server): upcoming songs go; now playing and history stay.
+$("clear-queue").addEventListener("click", async () => {
+  const n = state ? state.queue.length : 0;
+  if (!n || !confirm(`Clear the queue? This removes ${n === 1 ? "the 1 upcoming song" : `all ${n} upcoming songs`}. The current song keeps playing.`)) return;
+  const r = await hostPost("/api/host/clear");
+  toast(r.ok ? `Cleared ${n} song${n === 1 ? "" : "s"}` : "Couldn't clear the queue.");
+});
 const toggleRadio = () => state && hostPost("/api/host/radio", { on: !state.radio });
 $("radio-toggle").addEventListener("click", toggleRadio);
 $("radio-btn").addEventListener("click", toggleRadio);

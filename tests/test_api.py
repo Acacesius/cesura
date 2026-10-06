@@ -358,3 +358,21 @@ def test_back_restarts_then_goes_to_previous_even_after_skip(client):
     assert room.position() == 0.0 and room.now["videoId"] == first["videoId"]
     # Stale requests (someone else already moved on) do nothing.
     assert post(client, "/api/back", headers=H, qid="old").json() == {"ok": False, "stale": True}
+
+
+def test_clear_queue_is_host_only_and_keeps_now_and_history(client):
+    _, g = connect(client, "device-guest")
+    _, c = connect(client, "device-cohost")
+    client.post("/api/host/cohost", json={"pid": main.room.people.devices["device-cohost"].pid, "on": True}, headers=H)
+    post(client, "/api/add", g, videoIds=ids(5))
+    room = main.room
+    post(client, "/api/skip", headers=H, qid=room.now["qid"])
+    now, history = room.now, list(room.back_stack)
+    for who in ({"token": g}, {"token": c}):  # guests and co-hosts are refused by the server
+        assert client.post("/api/host/clear", json={"code": room.code, **who}).status_code == 403
+    assert client.post("/api/host/clear", headers={"X-Host-Key": "wrong"}).status_code == 403
+    assert len(room.queue) == 3
+    r = client.post("/api/host/clear", headers=H).json()
+    assert r == {"ok": True, "removed": 3}
+    assert room.queue == [] and room.now is now and list(room.back_stack) == history
+    assert room.host_panel()["feed"][0]["text"] == "cleared the queue (3 songs)"
