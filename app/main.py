@@ -37,6 +37,7 @@ from . import cookies as cookiejar
 from . import setup as setupstate
 from .fair import FairQueue
 from .library import TTLCache, fetch_lyrics, normalize_playlist, session_tracks
+from .netstats import net
 from .media import COOKIES, PROBE_VIDEO_ID, Resolver, _thumb, cookie_ytmusic, make_ytmusic, probe_account, song_to_track, to_track
 from .pocket import Station
 from .presence import DEVICE_ID, HB_INTERVAL, Device, Presence
@@ -79,7 +80,7 @@ INTERNAL_PORT = int(os.environ.get("CESURA_INTERNAL_PORT", "8765"))
 INTERNAL_TOKEN = secrets.token_urlsafe(24)
 
 ytm = make_ytmusic()
-public_ytm = YTMusic()  # never signed in: pasted playlist links can't reach the host's private playlists
+public_ytm = net.instrument(YTMusic())  # never signed in: pasted playlist links can't reach the host's private playlists
 resolver = Resolver()
 
 
@@ -309,11 +310,22 @@ class Room:
         await self.broadcast()
 
     # ---- broadcasting
-    async def _send(self, ws: WebSocket, msg: dict):
+    @staticmethod
+    async def _send_text(ws: WebSocket, text: str):
         try:
-            await ws.send_json(msg)
+            await ws.send_text(text)
         except Exception:
             pass  # disconnect handler cleans up
+
+    async def _send(self, ws: WebSocket, msg: dict):
+        text = json.dumps(msg, separators=(",", ":"))
+        net.push(msg.get("type", "?"), text, 1)
+        await self._send_text(ws, text)
+
+    async def _send_all(self, kind: str, targets: list[tuple[WebSocket, dict]]):
+        texts = [(ws, json.dumps(m, separators=(",", ":"))) for ws, m in targets]
+        net.push_batch(kind, [t for _, t in texts])
+        await asyncio.gather(*(self._send_text(ws, t) for ws, t in texts))
 
     async def push_host(self):
         """Refresh the host dashboard and co-hosts (drift updates), at most once a second."""
@@ -324,7 +336,7 @@ class Room:
         targets = [(ws, self.snapshot(d)) for d in self.people.devices.values() if d.cohost for ws in d.sockets]
         if self.host:
             targets.append((self.host, self.snapshot(for_host=True)))
-        await asyncio.gather(*(self._send(ws, m) for ws, m in targets))
+        await self._send_all("state (drift)", targets)
 
     async def broadcast(self):
         targets = []
@@ -333,7 +345,7 @@ class Room:
             targets += [(ws, snap) for ws in list(d.sockets)]
         if self.host:
             targets.append((self.host, self.snapshot(for_host=True)))
-        await asyncio.gather(*(self._send(ws, m) for ws, m in targets))
+        await self._send_all("state", targets)
 
     # ---- queue mechanics
     def item(self, track: dict, auto=False, by: str | None = None) -> dict:
@@ -470,7 +482,7 @@ class Room:
             self.code = new_code()
             self.record(actor, "code", "changed the room code")
         msg = {"type": "code", "code": self.code}
-        await asyncio.gather(*(self._send(ws, msg) for ws, _ in self.people.sockets()))
+        await self._send_all("code", [(ws, msg) for ws, _ in self.people.sockets()])
         await self.broadcast()
 
     async def rotate(self):
@@ -1185,6 +1197,13 @@ async def host_health(request: Request):
     return health
 
 
+@app.get("/api/host/net")
+async def host_net(request: Request):
+    """Network totals since start: pushes to clients, fetches from YouTube, peak concurrency and bandwidth."""
+    require_host(request)
+    return net.snapshot()
+
+
 @app.post("/api/new-session")
 async def new_session(request: Request):
     require_host(request)
@@ -1472,7 +1491,7 @@ async def guest_ws(ws: WebSocket, code: str = "", device: str = "", token: str =
                 await room.push_host()
             elif kind == "ping":
                 # Client computes its clock offset from this: server - (t_sent + rtt/2).
-                await ws.send_json({"type": "pong", "t": msg.get("t"), "server": time.time()})
+                await room._send(ws, {"type": "pong", "t": msg.get("t"), "server": time.time()})
             elif kind == "listen":
                 d.listening = bool(msg.get("on"))
                 await on_presence_change()
@@ -1523,7 +1542,7 @@ async def heartbeat_loop():
         for ws in dead:
             room.people.detach(ws)
             asyncio.create_task(_close_ws(ws, 4008, "no heartbeat"))
-        await asyncio.gather(*(room._send(ws, {"type": "hb"}) for ws in ping))
+        await room._send_all("hb", [(ws, {"type": "hb"}) for ws in ping])
         if dead:
             await on_presence_change()
 

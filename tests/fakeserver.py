@@ -74,7 +74,47 @@ class FakeLibrary:
         return "PLfakeExport" + str(len(self.exported)).zfill(8)
 
 
-media.Resolver._download = _download
+def fake_upstream(size: int) -> int:
+    """FAKE_UPSTREAM=1 (tests/netbench.py): keep the real download path (prefetch, RAM cache, network
+    accounting) and fake only YouTube: yt-dlp "resolves" in a second to a local server that serves
+    `size` bytes per track (a tone, padded) with Range support. Returns the port."""
+    import http.server
+    import socketserver
+    import threading
+
+    class Upstream(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = tone(self.path.split("?")[0].strip("/")).ljust(size, b"\0")
+            start, end = 0, size - 1
+            if (r := self.headers.get("Range", "")).startswith("bytes="):
+                a, b = r[6:].split("-")
+                start, end = int(a or 0), min(int(b or size - 1), size - 1)
+            self.send_response(206 if r else 200)
+            self.send_header("Content-Length", str(end - start + 1))
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            self.wfile.write(body[start:end + 1])
+
+        def log_message(self, *a):
+            pass
+
+    srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Upstream)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_address[1]
+
+    def extract(video_id):
+        time.sleep(1.0)  # yt-dlp takes a few seconds per lookup in real life
+        return {"url": f"http://127.0.0.1:{port}/{video_id}?clen={size}&expire={int(time.time()) + 3600}&dur={SECONDS}",
+                "ext": "wav", "format_id": "0", "acodec": "pcm", "abr": 352}
+
+    media._extract = extract
+    return port
+
+
+if os.environ.get("FAKE_UPSTREAM"):
+    fake_upstream(int(os.environ.get("FAKE_BYTES", str(7 * 1024 * 1024))))
+else:
+    media.Resolver._download = _download
 if os.environ.get("FAKE_NO_ART"):  # screenshots: no real album art, the UI's placeholder tiles instead
     media._thumb = lambda thumbs: None
 media.Resolver.cookie_health = lambda self: "valid"
