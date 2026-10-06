@@ -9,6 +9,8 @@
 <link rel="preload" href="/static/ds/fonts/bricolage-grotesque-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/ds/base.css?v=0.2.0.2">
 <link rel="stylesheet" href="/static/cesura.css?v=0.2.0.2">
+<link rel="stylesheet" href="/static/themes.css?v=0.2.0.2">
+<script>try{var t=localStorage.getItem("cesura.theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
 
@@ -52,7 +54,7 @@
   <!-- Playing -->
   <header data-for="playing">
     <span class="wordmark">cesura<svg viewBox="0 0 12 20" aria-hidden="true"><path d="M2 17L6 3"/><path d="M6.5 17L10.5 3"/></svg></span>
-    <div class="right"><span class="pill code-chip" data-code></span><button class="people-btn" data-people aria-label="Who's here"></button></div>
+    <div class="right"><span class="pill code-chip" data-code></span><button class="iconbtn bare" id="theme-btn" aria-label="Theme"></button><button class="people-btn" data-people aria-label="Who's here"></button></div>
   </header>
   <section id="v-playing" class="view np-view" data-view="playing" aria-label="Now playing">
     <div class="np-art" id="np-art"></div>

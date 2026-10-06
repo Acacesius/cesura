@@ -1,0 +1,59 @@
+/* Built-in themes. A theme is only a set of token values: every colour in cesura comes from these
+   variables. No data-theme (the default) is Cesium, defined in cesura.css. Chosen per viewer in the
+   theme picker (common.js), saved in this browser. Checked for WCAG AA text contrast. */
+:root[data-theme="sakura"] {
+  --scheme: light;
+  --ground: #FBF3F5; --surface: #FFFFFF; --raised: #F6E7EC; --line: #EED8DF; --line-2: #E5C8D1; --row: #F4E4E9;
+  --text: #3A2830; --muted: #735A64; --faint: #80646F; --amber: #C2406A; --amber-hi: #D9608A; --on-amber: #FFFFFF;
+  --amber-line: #EDB6C8; --status: #3F7A4C; --status-line: #BFD8C3; --status-bg: #E8F2EA; --warn: #A8620F; --art-ph: #F0D3DC;
+  --notice-bg: #FCE6EC; --shadow: #5A283C33; --scrim: #3A283066;
+}
+:root[data-theme="yozakura"] {
+  --scheme: dark;
+  --ground: #140F14; --surface: #1C151C; --raised: #261C25; --line: #2E222D; --line-2: #382937; --row: #211820;
+  --text: #F3E6EC; --muted: #B39AA8; --faint: #9C8393; --amber: #F49AC1; --amber-hi: #FFC2DC; --on-amber: #2A0F1C;
+  --amber-line: #5E3349; --status: #B9A6F2; --status-line: #3E3566; --status-bg: #1F1A33; --warn: #F4B544; --art-ph: #3A2433;
+  --notice-bg: #2A1621; --shadow: #000000aa; --scrim: #000000bb;
+}
+:root[data-theme="matcha"] {
+  --scheme: dark;
+  --ground: #0F1410; --surface: #161D17; --raised: #1E2720; --line: #253027; --line-2: #2D3A2F; --row: #1A221B;
+  --text: #E9EEE4; --muted: #9FAE9C; --faint: #879784; --amber: #A8D672; --amber-hi: #C8EC9A; --on-amber: #142008;
+  --amber-line: #3F5A2A; --status: #E8D59F; --status-line: #5A4E2E; --status-bg: #26221A; --warn: #E8B04A; --art-ph: #2A3A2C;
+  --notice-bg: #1D2614; --shadow: #000000aa; --scrim: #000000bb;
+}
+:root[data-theme="lavender"] {
+  --scheme: dark;
+  --ground: #12111A; --surface: #1A1824; --raised: #23202F; --line: #2A2738; --line-2: #332F44; --row: #1E1C29;
+  --text: #ECEAF4; --muted: #A7A2BC; --faint: #8F8AA7; --amber: #B9A6F2; --amber-hi: #D6CAFF; --on-amber: #1A1230;
+  --amber-line: #4A3F72; --status: #8FD3C6; --status-line: #2E5550; --status-bg: #172826; --warn: #F4B544; --art-ph: #2F2A45;
+  --notice-bg: #1F1B2E; --shadow: #000000aa; --scrim: #000000bb;
+}
+:root[data-theme="ocean"] {
+  --scheme: dark;
+  --ground: #0B1218; --surface: #111B23; --raised: #18242E; --line: #1E2C37; --line-2: #253541; --row: #142029;
+  --text: #E6EEF2; --muted: #98AAB5; --faint: #80949F; --amber: #4FD1C5; --amber-hi: #85E6DC; --on-amber: #04201D;
+  --amber-line: #1E5650; --status: #8CB8F0; --status-line: #2F4466; --status-bg: #172336; --warn: #F4B544; --art-ph: #1B3442;
+  --notice-bg: #0F2229; --shadow: #000000aa; --scrim: #000000bb;
+}
+:root[data-theme="sunset"] {
+  --scheme: dark;
+  --ground: #16100E; --surface: #1F1714; --raised: #2A1F1B; --line: #33261F; --line-2: #3D2D25; --row: #241A16;
+  --text: #F6ECE6; --muted: #B8A096; --faint: #A08980; --amber: #FF8A5B; --amber-hi: #FFB08F; --on-amber: #2A0E02;
+  --amber-line: #6B3520; --status: #F2C46D; --status-line: #5E4A22; --status-bg: #2A2112; --warn: #F2C46D; --art-ph: #3D261D;
+  --notice-bg: #2A1810; --shadow: #000000aa; --scrim: #000000bb;
+}
+:root[data-theme="paper"] {
+  --scheme: light;
+  --ground: #F6F4EF; --surface: #FFFFFF; --raised: #EEEBE3; --line: #E2DED4; --line-2: #D6D1C5; --row: #ECE8DF;
+  --text: #22211E; --muted: #5E5A52; --faint: #6E6961; --amber: #9A5B00; --amber-hi: #B87514; --on-amber: #FFFFFF;
+  --amber-line: #E4C58E; --status: #2B65A6; --status-line: #B9CDE6; --status-bg: #E7EFF8; --warn: #9A5B00; --art-ph: #DDE3EC;
+  --notice-bg: #FBF0DC; --shadow: #3A321E2e; --scrim: #22211E66;
+}
+:root[data-theme="mono"] {
+  --scheme: dark;
+  --ground: #0E0E0E; --surface: #161616; --raised: #1F1F1F; --line: #262626; --line-2: #2E2E2E; --row: #1A1A1A;
+  --text: #EEEEEE; --muted: #A3A3A3; --faint: #8C8C8C; --amber: #F2F2F2; --amber-hi: #FFFFFF; --on-amber: #111111;
+  --amber-line: #4A4A4A; --status: #BDBDBD; --status-line: #3A3A3A; --status-bg: #1E1E1E; --warn: #E0E0E0; --art-ph: #2A2A2A;
+  --notice-bg: #1C1C1C; --shadow: #000000aa; --scrim: #000000bb;
+}

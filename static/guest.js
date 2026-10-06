@@ -48,6 +48,8 @@ function fillCode(v, from = 0) {
 const typedCode = () => boxes.map((b) => b.value).join("");
 $("name-input").value = myName;
 $("join-arrow").innerHTML = icon("arrow");
+$("theme-btn").innerHTML = icon("palette");
+$("theme-btn").addEventListener("click", openThemes);
 $("note-1").innerHTML = icon("radio");
 $("note-2").innerHTML = icon("phone");
 

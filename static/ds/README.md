@@ -24,8 +24,12 @@ theme file, loaded **after** `base.css`, then adds app-specific CSS.
 | Accent (one per app) | `--accent` `--accent-hi` `--on-accent` `--accent-line` |
 | Signal (status, sync, "OK") | `--signal` `--signal-line` `--signal-bg` |
 | Warning | `--warn` |
+| Optional | `--shadow` `--scrim` (overlays), `--on-avatar` (initials on the pastel avatars), `--scheme` (`dark` / `light`, for form controls and scrollbars) |
 
 cesura: accent = amber `#F4B544`, signal = cesium blue `#8CB8F0`.
+
+Themes are only other values for the same tokens (`:root[data-theme="…"]` in the app's
+`themes.css`), so nothing in `base.css` or the app CSS may use a raw colour.
 rubato: accent = rubidium red `#F2506A`. Its signal colour is its call.
 
 ```html

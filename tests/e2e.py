@@ -402,6 +402,21 @@ def main():
         check("artist panel: hides when the window narrows", lambda: expect(desk.locator("#artist")).to_be_hidden(timeout=3000))
         desk_ctx.close()
 
+        # Themes: picked per viewer, kept in the browser, colours only through CSS variables.
+        maya.click("nav.tabbar [data-tab=playing]")
+        maya.click("#theme-btn")
+        maya.locator("#theme-sheet .theme", has_text="Night sakura").click()
+        check("theme: applies at once and only for this viewer", lambda: (
+            expect(maya.locator("html")).to_have_attribute("data-theme", "yozakura"),
+            maya.wait_for_function("() => getComputedStyle(document.body).backgroundColor === 'rgb(20, 15, 20)'"),
+            expect(theo.locator("html")).not_to_have_attribute("data-theme", "yozakura")))
+        maya.keyboard.press("Escape")
+        maya.reload()
+        check("theme: still there after a reload", lambda: (
+            expect(maya.locator("html")).to_have_attribute("data-theme", "yozakura"),
+            expect(maya.locator("#room")).to_be_visible(timeout=10000)))
+        maya.evaluate("applyTheme('')")
+
         # Tap targets: everything interactive on the phone screens is at least 44px in both directions (or wraps a 44px area).
         def small_targets(pg):
             return pg.evaluate("""() => [...document.querySelectorAll('button, a, input:not([type=checkbox]):not([type=range]), label.switch, [role=button]')]

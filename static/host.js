@@ -342,6 +342,8 @@ $("pop-library").addEventListener("click", () => {
   if (on && !confirm("Let guests browse your YouTube Music playlists and liked songs for this room? They can see titles and queue from them. It turns off again with a new server start.")) return;
   hostPost(`/api/host/settings?library=${on}`);
 });
+$("pop-theme").replaceChildren(ic("palette"), "Theme");
+$("pop-theme").addEventListener("click", () => { $("settings-pop").classList.add("hidden"); openThemes(); });
 $("pop-health").replaceChildren(ic("pulse"), "Check YouTube link now");
 $("pop-health").addEventListener("click", async () => {
   $("settings-pop").classList.add("hidden");
