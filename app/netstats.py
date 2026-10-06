@@ -105,14 +105,18 @@ class NetStats:
 
     def ytmusic_hook(self, resp, *_, **__):
         """requests response hook for ytmusicapi sessions: one line per YouTube Music API call."""
-        n = len(resp.content or b"")
+        body = resp.content or b""
+        decoded = len(body)
+        # YouTube sends these gzipped (chunked, so no length header): estimate the wire size by
+        # compressing the same way, rather than counting the decoded JSON.
+        n = len(zlib.compress(body, 6)) if "gzip" in resp.headers.get("content-encoding", "") and decoded > 1024 else decoded
         endpoint = resp.url.split("?")[0].rsplit("/", 1)[-1]
         f = self.fetches["ytmusic"]
         f["n"] += 1
         f["bytes"] += n
         f["secs"] += resp.elapsed.total_seconds()
         self._inbound(n)
-        log.info("fetch ytmusic %s: %s in %.2fs", endpoint, human(n), resp.elapsed.total_seconds())
+        log.info("fetch ytmusic %s: ~%s gzip (%s decoded) in %.2fs", endpoint, human(n), human(decoded), resp.elapsed.total_seconds())
 
     def instrument(self, yt):
         """Count every HTTP call a YTMusic client makes."""
