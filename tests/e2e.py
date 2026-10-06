@@ -368,6 +368,21 @@ def main():
             expect(host.locator("#feed")).to_contain_text("cleared the queue")))
         check("clear queue: no button for guests", lambda: expect(maya.locator("#clear-queue")).to_have_count(0))
 
+        # Like: the host's heart; a guest's request is refused by the server.
+        check("like: guests are refused (403) and have no button", lambda: (
+            maya.evaluate("""async () => (await fetch('/api/host/like', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ videoId: state.now.videoId, on: true, code: localStorage.getItem('cesura.code'), token: localStorage.getItem('cesura.token') }) })).status""") == 403
+            or (_ for _ in ()).throw(AssertionError("guest like not refused")),
+            expect(maya.locator("#like")).to_have_count(0)))
+        expect(host.locator("#like")).to_be_enabled(timeout=5000)
+        host.click("#like")
+        check("like: heart fills, toast confirms, feed records it", lambda: (
+            expect(host.locator("#like")).to_have_attribute("aria-pressed", "true", timeout=5000),
+            expect(host.locator("#toast")).to_contain_text("Liked"),
+            expect(host.locator("#feed")).to_contain_text("liked")))
+        host.click("#like")
+        check("like: pressing again un-likes", lambda: expect(host.locator("#like")).to_have_attribute("aria-pressed", "false", timeout=5000))
+
         # Tap targets: everything interactive on the phone screens is at least 44px in both directions (or wraps a 44px area).
         def small_targets(pg):
             return pg.evaluate("""() => [...document.querySelectorAll('button, a, input:not([type=checkbox]):not([type=range]), label.switch, [role=button]')]

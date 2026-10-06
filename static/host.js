@@ -76,6 +76,7 @@ function apply(s) {
   $("pause").disabled = !n || s.status === "loading";
   $("skip").disabled = !n;
   $("back").disabled = !n && !s.can_back;
+  renderLike();
   $("skip").title = s.votes ? `Skip now (${s.votes}/${s.votes_needed} votes so far)` : "Skip now";
   $("radio-toggle").setAttribute("aria-pressed", String(s.radio));
   // Short label so it never collides with the pause button in a narrow column; state shows in the icon colour.
@@ -256,6 +257,33 @@ async function setCohost(l, on) {
 }
 $("pause").addEventListener("click", () => state && roomPost("/api/pause", { paused: state.status !== "paused" }));
 $("skip").addEventListener("click", skipNow);
+// Like (host only, enforced by the server): adds the song to your YouTube Music liked songs, which
+// feeds your radio; pressed again un-likes it. A YouTube error shows here and nothing changes.
+let likeBusy = false;
+function renderLike() {
+  const n = state && state.now, on = !!(state && state.liked);
+  $("like").disabled = !n || likeBusy;
+  $("like").setAttribute("aria-pressed", String(on));
+  $("like").setAttribute("aria-label", on ? "Liked on YouTube Music. Press to un-like" : "Like on YouTube Music");
+  $("like").title = on ? "In your liked songs" : "Add to your YouTube Music liked songs";
+  $("like").classList.toggle("busy", likeBusy);
+}
+$("like").innerHTML = icon("heart");
+$("like").addEventListener("click", async () => {
+  const n = state && state.now;
+  if (!n || likeBusy) return;
+  const on = !state.liked;
+  likeBusy = true;
+  renderLike();
+  try {
+    const r = await hostPost("/api/host/like", { videoId: n.videoId, on });
+    const d = await r.json().catch(() => ({}));
+    toast(r.ok ? (on ? `Liked ${n.title}` : `Removed ${n.title} from liked songs`) : d.detail || "YouTube Music didn't accept that.");
+  } catch { toast("Couldn't reach the server. Nothing was changed."); }
+  likeBusy = false;
+  renderLike();
+});
+
 // Clear queue (host only, enforced by the server): upcoming songs go; now playing and history stay.
 $("clear-queue").addEventListener("click", async () => {
   const n = state ? state.queue.length : 0;

@@ -69,6 +69,15 @@ class FakeLibrary:
     def get_liked_songs(self, limit=100):
         return {"title": "Liked Music", "trackCount": 12, "tracks": self._tracks("LM")}
 
+    liked: dict = {}
+
+    def rate_song(self, video_id, rating="INDIFFERENT"):
+        self.liked[video_id] = rating
+        return {"actions": []}
+
+    def get_watch_playlist(self, videoId, limit=1):
+        return {"tracks": [{"videoId": videoId, "likeStatus": self.liked.get(videoId, "INDIFFERENT")}]}
+
     def create_playlist(self, title, description, privacy_status="PRIVATE", video_ids=None, source_playlist=None):
         self.exported.append((title, list(video_ids or [])))
         return "PLfakeExport" + str(len(self.exported)).zfill(8)

@@ -331,3 +331,8 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 }
 
 .qrow .grip { width: 28px; margin-left: 0; }
+
+/* Like (host): the heart fills when the song is in the host's liked songs */
+.like[aria-pressed=true] { color: var(--amber); border-color: var(--amber-line); }
+.like[aria-pressed=true] svg.i path { fill: currentColor; }
+.like.busy { opacity: .6; }
