@@ -68,15 +68,25 @@ nav.tabbar button[aria-current=page] { color: var(--amber); }
 .track-bar .knob { width: 14px; height: 14px; margin: 0 -7px; border-radius: 50%; background: var(--text); flex: none; position: relative; z-index: 1; }
 .track-bar .rest { flex: 1; height: 6px; border-radius: 3px; background: var(--line-2); }
 .times { margin-top: 6px; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; color: var(--faint); }
-.controls { margin-top: 8px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; }
-.round { width: 52px; height: 52px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--text); position: relative; }
-.round .count { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--amber); color: var(--on-amber); font-family: var(--mono); font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
-.big { width: 72px; height: 72px; border-radius: 50%; background: var(--amber); color: var(--on-amber); display: flex; align-items: center; justify-content: center; justify-self: center; }
-.big svg.i { width: 30px; height: 30px; stroke-width: 2.4; }
-.controls > :first-child { justify-self: start; } .controls > :last-child { justify-self: end; }
-.controls { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
-.controls > .transport { justify-self: center; display: flex; align-items: center; gap: 14px; }
+/* ---- playback controls: one transport group (back · play · skip) centred, other actions at the sides.
+   Two sizes only: play (72px phone, 64px host) and everything else (52px). All ≥ 44px to tap. */
+.controls { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.controls > :first-child { justify-self: start; }
+.controls > :last-child { justify-self: end; }
+.controls > .transport { justify-self: center; display: flex; align-items: center; gap: 16px; }
 .transport .off { visibility: hidden; }  /* Back is the host's and co-hosts': keep play centred without it */
+.round { width: 52px; height: 52px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--text); position: relative; flex: none; }
+.round svg.i { width: 22px; height: 22px; }
+.round .count { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--amber); color: var(--on-amber); font-family: var(--mono); font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+.big { width: 72px; height: 72px; border-radius: 50%; background: var(--amber); color: var(--on-amber); display: flex; align-items: center; justify-content: center; flex: none; }
+.big svg.i { width: 30px; height: 30px; stroke-width: 2.4; }
+.round, .big, .radio-pill { transition: background .15s ease-out, transform .1s ease-out, border-color .15s ease-out; }
+.round:hover:not(:disabled), .radio-pill:hover { background: var(--raised); border-color: var(--line-2); }
+.big:hover:not(:disabled) { background: var(--amber-hi); }
+.round:active:not(:disabled), .big:active:not(:disabled), .radio-pill:active { transform: scale(.94); }
+.round:disabled, .big:disabled { opacity: .4; }
+/* Focus: a text-coloured ring, clear of the button, so it shows on the accent play button and in every theme. */
+.controls :focus-visible, .track-bar:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
 .syncpill { margin-top: 10px; align-self: center; min-height: 28px; padding: 4px 12px; display: flex; align-items: center; gap: 8px; border-radius: 999px; background: var(--surface); font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: center; }
 button.syncpill { border: 1px solid var(--amber); color: var(--amber); min-height: 44px; font-weight: 500; }
 .volume { margin-top: 12px; display: flex; align-items: center; gap: 10px; color: var(--faint); }
@@ -159,10 +169,13 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 .linkbtn:disabled { opacity: .4; cursor: default; }
 .np-by { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--faint); }
 .np-by .avatar { width: 20px; height: 20px; font-size: 10px; }
-.host .controls { gap: 8px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
 .host .np-art { max-width: none; max-height: none; border-radius: 14px; }
 .host .np-title { margin-top: 18px; font-size: 26px; }
-.host .controls { margin-top: 14px; }
+/* Host: the transport gets its own centred row; radio and like sit on the row under it. */
+.host .controls { margin-top: 14px; grid-template-columns: 1fr auto; grid-template-areas: "t t" "a b"; row-gap: 14px; }
+.host .controls > .transport { grid-area: t; gap: 14px; }
+.host .controls > .radio-pill { grid-area: a; }
+.host .controls > .ctl-end { grid-area: b; display: flex; gap: 10px; }
 .host .big { width: 64px; height: 64px; }
 .radio-pill { height: 44px; padding: 0 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; background: var(--ground); border: 1px solid var(--line); font-size: 14px; font-weight: 600; }
 .radio-pill svg.i { width: 18px; height: 18px; color: var(--status); }

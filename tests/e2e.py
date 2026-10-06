@@ -417,6 +417,15 @@ def main():
             expect(maya.locator("#room")).to_be_visible(timeout=10000)))
         maya.evaluate("applyTheme('')")
 
+        # Button panel: keyboard focus is visible, and the host's controls are full-size targets.
+        host.keyboard.press("Shift+Tab")
+        host.evaluate("document.getElementById('pause').focus()")
+        check("controls: keyboard focus shows a ring", lambda: host.wait_for_function(
+            "() => { const s = getComputedStyle(document.getElementById('pause')); return s.outlineStyle === 'solid' && parseFloat(s.outlineWidth) >= 2; }", timeout=3000))
+        small = host.evaluate("""() => ['back', 'pause', 'skip', 'like', 'radio-toggle'].map(id => [id, document.getElementById(id).getBoundingClientRect()])
+            .filter(([id, r]) => r.width < 44 || r.height < 44).map(([id]) => id)""")
+        check("controls: host buttons ≥ 44px", lambda: not small or (_ for _ in ()).throw(AssertionError(small)))
+
         # Tap targets: everything interactive on the phone screens is at least 44px in both directions (or wraps a 44px area).
         def small_targets(pg):
             return pg.evaluate("""() => [...document.querySelectorAll('button, a, input:not([type=checkbox]):not([type=range]), label.switch, [role=button]')]
