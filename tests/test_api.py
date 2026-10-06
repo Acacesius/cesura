@@ -260,3 +260,51 @@ def test_malformed_codes_are_refused_without_counting_toward_lockout(client):
     for _ in range(10):
         client.post("/api/join", json={"code": "ZZZZZ" if main.room.code != "ZZZZZ" else "YYYYY"})
     assert client.post("/api/join", json={"code": main.room.code}).status_code == 429  # real guesses still lock
+
+
+def test_guest_drags_only_own_songs_within_own_turns(client):
+    _, a = connect(client, "device-aaaa")
+    _, b = connect(client, "device-bbbb")
+    post(client, "/api/add", headers=H, videoIds=ids(1, 30))     # starts playing
+    post(client, "/api/add", a, videoIds=ids(3))                 # a0 a1 a2
+    post(client, "/api/add", b, videoIds=ids(2, 10))             # b0 b1
+    titles = lambda: [t["title"] for t in main.room.queue]
+    assert titles() == ["Song 0", "Song 10", "Song 1", "Song 11", "Song 2"]
+    q = main.room.queue
+    # b can't touch a's songs.
+    assert post(client, "/api/move", b, qid=q[0]["qid"], index=4).status_code == 403
+    # a drags their third song to the very top: it becomes a's first turn, not ahead of the rotation.
+    r = post(client, "/api/move", a, qid=q[4]["qid"], index=0, from_index=4)
+    assert r.status_code == 200
+    assert titles() == ["Song 2", "Song 10", "Song 0", "Song 11", "Song 1"]
+    assert not any(t["pin"] is not None for t in main.room.queue)
+
+
+def test_stale_drag_is_refused_and_queue_stays_whole(client):
+    _, a = connect(client, "device-aaaa")
+    post(client, "/api/add", headers=H, videoIds=ids(6))
+    q = [t["qid"] for t in main.room.queue]
+    # Two people drag at once from the same view: the second is based on a stale index.
+    assert post(client, "/api/move", headers=H, qid=q[4], index=0, from_index=4).status_code == 200
+    r = post(client, "/api/move", headers=H, qid=q[3], index=0, from_index=3)
+    assert r.status_code == 409
+    assert sorted(t["qid"] for t in main.room.queue) == sorted(q)  # nothing lost or duplicated
+    assert post(client, "/api/move", headers=H, qid="nope", index=0).status_code == 409
+
+
+def test_concurrent_drags_never_corrupt_the_queue(client):
+    import concurrent.futures
+    import random
+    post(client, "/api/add", headers=H, videoIds=ids(21))
+    before = sorted(t["qid"] for t in main.room.queue)
+    rnd = random.Random(3)
+
+    def drag(_):
+        q = [t["qid"] for t in main.room.queue]
+        i = rnd.randrange(len(q))
+        return post(client, "/api/move", headers=H, qid=q[i], index=rnd.randrange(len(q)), from_index=i).status_code
+
+    with concurrent.futures.ThreadPoolExecutor(8) as ex:
+        codes = list(ex.map(drag, range(60)))
+    assert set(codes) <= {200, 409}
+    assert sorted(t["qid"] for t in main.room.queue) == before

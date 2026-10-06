@@ -765,7 +765,8 @@ class PauseBody(ActBody):
 
 
 class MoveBody(QidBody):
-    index: int
+    index: int                     # where it goes, counted without it
+    from_index: int | None = None  # where the client saw it: if it's moved since, the drag is refused
 
 
 class PidBody(ActBody):
@@ -1098,18 +1099,32 @@ async def library_playlist(id: str, code: str, request: Request):
 
 # ------------------------------------------------------------------ host + co-host (moderation)
 
+@app.post("/api/move")
 @app.post("/api/mod/move")
-async def mod_move(body: MoveBody, request: Request):
-    """Reorder the queue. The moved song is pinned there; round-robin no longer moves it."""
-    actor = mod_for(request, body)
+async def move(body: MoveBody, request: Request):
+    """Drag to reorder. The host and co-hosts move anything (it's pinned there; round-robin no
+    longer moves it). Guests move their own songs among their own turns (see FairQueue.reorder_own).
+    Every drag runs under the room lock against the queue as it is now, so two people dragging at
+    once can't corrupt it: a drag based on a stale view (from_index) is refused and the client
+    redraws from the broadcast."""
+    actor = actor_for(request, body)
     async with room.lock:
-        ok = room.fq.move(body.qid, body.index)
-        if ok:
-            t = room.fq.find(body.qid)
-            room.record(actor, "move", f"moved {t['title']} to #{room.queue.index(t) + 1}")
-            room.prefetch_next()
+        t = room.fq.find(body.qid)
+        if t is None:
+            raise HTTPException(409, "That song isn't in the queue any more.")
+        if body.from_index is not None and room.queue.index(t) != body.from_index:
+            raise HTTPException(409, "The queue changed while you were dragging.")
+        if actor.mod:
+            room.fq.move(body.qid, body.index)
+        elif t.get("owner") != actor.key:
+            raise HTTPException(403, "You can only move songs you added.")
+        elif not room.fq.reorder_own(body.qid, body.index):
+            raise HTTPException(409, "The host pinned that song.")
+        at = room.queue.index(t)
+        room.record(actor, "move", f"moved {t['title']} to #{at + 1}")
+        room.prefetch_next()
     await room.broadcast()
-    return {"ok": ok}
+    return {"ok": True, "index": at}
 
 
 @app.post("/api/mod/kick")

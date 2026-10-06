@@ -98,6 +98,26 @@ class FairQueue:
         self._arrange()
         return True
 
+    def reorder_own(self, qid: str, index: int) -> bool:
+        """A guest's drag: move one of their own unpinned songs among their own turns.
+
+        `index` is where it was dropped in the whole queue (counted without it).
+        It goes ahead of whichever of the owner's songs would follow it there;
+        the rotation still decides where each of the owner's turns falls, so a
+        guest can't jump ahead of other people.
+        """
+        t = self.find(qid)
+        if t is None or t.get("pin") is not None:
+            return False
+        seqs = self._seqs()
+        mine = seqs[t.get("owner") or ""]
+        mine.remove(t)
+        own = {o["qid"] for o in mine}
+        others = [o for o in self.items if o is not t]
+        mine.insert(sum(1 for o in others[:max(0, index)] if o["qid"] in own), t)
+        self._arrange(seqs)
+        return True
+
     def retain(self, keep) -> list[dict]:
         """Drop every item where keep(item) is false (e.g. a kicked guest's tracks). Returns what was dropped."""
         gone = [t for t in self.items if not keep(t)]

@@ -123,3 +123,9 @@ svg.i { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor;
 .trow.swiping, .qrow.swiping { background: var(--surface); box-shadow: 8px 0 0 -2px var(--accent) inset; }
 .trow.drop-above, .qrow.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
 .trow.drop-below, .qrow.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
+/* drag to reorder with a grip (sortable() in core.js): mouse, pen, touch, arrow keys */
+.grip { flex: none; width: 44px; height: 44px; margin-left: -12px; margin-right: -4px; display: flex; align-items: center; justify-content: center; color: var(--faint); cursor: grab; touch-action: none; border-radius: 8px; }
+.grip:hover { color: var(--text); }
+.grip svg.i { width: 18px; height: 18px; }
+.sorting > [data-qid] { transition: transform .15s ease-out; }
+.sorting > .dragging { transition: none; position: relative; z-index: 3; background: var(--raised); border-radius: 12px; box-shadow: 0 10px 28px #0008; cursor: grabbing; }

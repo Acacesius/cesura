@@ -164,16 +164,12 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 .addbox .searchfield input { font-size: 15px; text-overflow: ellipsis; }
 .dropdown { position: absolute; left: 0; right: 0; top: 54px; z-index: 5; max-height: 380px; overflow-y: auto; padding: 6px 14px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 16px 40px #000a; }
 .queue-card { container-type: inline-size; }
-.qgrid { display: grid; grid-template-columns: 16px 44px minmax(0, 1fr) minmax(0, 120px) 52px 44px; gap: 12px; align-items: center; padding: 0 10px; }
+.qgrid { display: grid; grid-template-columns: 28px 44px minmax(0, 1fr) minmax(0, 120px) 52px 44px; gap: 12px; align-items: center; padding: 0 10px; }
 /* Autoplay radio rows: [art][title / artist][duration][+], art aligned with the queue's art column. */
-.agrid { display: grid; grid-template-columns: 44px minmax(0, 1fr) 52px 44px; gap: 12px; align-items: center; padding: 0 10px 0 38px; }
+.agrid { display: grid; grid-template-columns: 44px minmax(0, 1fr) 52px 44px; gap: 12px; align-items: center; padding: 0 10px 0 50px; }
 .qhdr { margin-top: 16px; height: 28px; font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--faint); }
 .qrow { height: 60px; border-radius: 12px; }
 .qrow.first { background: var(--raised); }
-.qrow.dragging { opacity: .4; }
-.qrow.drop-above { box-shadow: inset 0 2px 0 var(--amber); }
-.qrow .handle { color: var(--faint); cursor: grab; display: flex; }
-.qrow .handle svg.i { width: 16px; height: 16px; }
 .qrow .art { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; }
 .qrow .cell { min-width: 0; }
 .qrow .t { font-size: 15px; font-weight: 600; }
@@ -185,7 +181,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 .qrow .time { font-family: var(--mono); font-size: 13px; color: var(--muted); text-align: right; }
 .qhdr .time { text-align: right; }
 @container (max-width: 480px) {  /* narrow queue card: "added by" shrinks to the avatar */
-  .qgrid { grid-template-columns: 16px 44px minmax(0, 1fr) 28px 52px 44px; }
+  .qgrid { grid-template-columns: 28px 44px minmax(0, 1fr) 28px 52px 44px; }
   .qgrid .who .name, .qhdr .who { visibility: hidden; }
   .qgrid .who .name { display: none; }
 }
@@ -220,7 +216,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 @media (max-width: 760px) {
   .host > header { height: auto; padding: 14px 16px; flex-wrap: wrap; }
   .host main { grid-template-columns: minmax(0, 1fr); padding: 16px; }
-  .qgrid { grid-template-columns: 16px 44px minmax(0, 1fr) 44px; }
+  .qgrid { grid-template-columns: 28px 44px minmax(0, 1fr) 44px; }
   .qgrid .who, .qgrid .time, .qhdr .who, .qhdr .time { display: none; }
 }
 
@@ -320,3 +316,5 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: 0; bord
 @media (max-width: 760px) {
   .host .iconbtn.bare, .popover button { min-height: 44px; }
 }
+
+.qrow .grip { width: 28px; margin-left: 0; }

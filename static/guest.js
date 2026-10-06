@@ -236,9 +236,12 @@ function render(s) {
 }
 
 function renderLists(s, mod) {
-  $("q-head").textContent = s.queue.length ? `Up next · ${s.queue.length} song${s.queue.length > 1 ? "s" : ""} · ${totalMin(s.queue)} min${mod ? " · swipe to remove, hold to move" : ""}` : "Up next";
+  if (sorter.dragging) return; // redrawn when the drag ends
+  $("q-head").textContent = s.queue.length ? `Up next · ${s.queue.length} song${s.queue.length > 1 ? "s" : ""} · ${totalMin(s.queue)} min${mod ? " · swipe to remove" : ""}` : "Up next";
   const qrows = s.queue.map((t, i) => {
+    // The host and co-hosts can move anything; guests their own songs (unless the host pinned them).
     const row = trow(t, {
+      lead: mod || (mine(t) && !t.pinned) ? gripBtn(t) : null,
       tag: i === 0 ? el("span", { class: "tag", textContent: "NEXT" }) : t.pinned ? el("span", { class: "tag amber", textContent: "PINNED" }) : null,
       right: mine(t) || mod ? el("button", { class: "iconbtn", html: icon("x"), ariaLabel: `Remove ${t.title}`, onclick: () => removeTrack(t) }) : avatar(t.by || (t.auto ? "Radio" : "?")),
       sub: t.by ? `${mine(t) ? "you" : t.by}` : null,
@@ -249,6 +252,7 @@ function renderLists(s, mod) {
   $("queue").replaceChildren(...(qrows.length ? qrows : [emptyState("queue", "Nothing queued yet", s.radio ? "Search for something, or let the radio pick." : "Search for a song to get things going.",
     el("button", { class: "btn fill", textContent: "Search", onclick: () => show("search") }))]));
   if (mod && qrows.length) touchQueue(qrows, { onRemove: (qid) => removeTrack(s.queue.find((t) => t.qid === qid)), onMove: moveTrack });
+  sorter.restore();
   $("radio-block").classList.toggle("hidden", !s.radio && !s.auto.length);
   $("radio-sub").textContent = s.radio ? "after the queue" : "off";
   $("auto").replaceChildren(...s.auto.slice(0, 6).map((t) => trow(t, { weight: 500, right: addBtn(t) })));
@@ -256,8 +260,8 @@ function renderLists(s, mod) {
   $("played").replaceChildren(...s.played.slice(0, 8).map((t) => trow(t, { weight: 500, right: addBtn(t, "replay") })));
 }
 
-function trow(t, { tag = null, right = null, weight = 600, extra = null, sub = null } = {}) {
-  return el("div", { class: "trow" }, art(t),
+function trow(t, { tag = null, right = null, weight = 600, extra = null, sub = null, lead = null } = {}) {
+  return el("div", { class: "trow" }, lead, art(t),
     el("div", { class: "grow" },
       el("div", { style: "display:flex;align-items:center;gap:8px;min-width:0" }, el("span", { class: "t ellip", style: `font-weight:${weight}`, textContent: t.title }), tag),
       el("div", { class: "s ellip", textContent: [t.artists, t.duration && fmt(t.duration), sub].filter(Boolean).join(" · ") })),
@@ -522,10 +526,14 @@ async function removeTrack(t) {
   const r = await api("/api/remove", { qid: t.qid });
   if (r.ok) toast(`Removed ${t.title}`);
 }
-async function moveTrack(qid, index) {
-  const r = await api("/api/mod/move", { qid, index });
-  if (r.ok) toast("Moved and pinned");
+// Drag to reorder. The server checks it against the queue as it is now: if someone else moved
+// things first it refuses, and the list redraws from the broadcast either way.
+async function moveTrack(qid, index, from) {
+  const r = await api("/api/move", { qid, index, from_index: from });
+  if (r.ok) toast(isMod() ? "Moved and pinned" : "Moved");
+  else toast((await r.json().catch(() => ({}))).detail || "Couldn't move that.");
 }
+const sorter = sortable($("queue"), { onMove: moveTrack, onIdle: () => state && renderLists(state, isMod()) });
 
 // ---- search: all / songs / albums / playlists, or a pasted link
 let kind = "all";

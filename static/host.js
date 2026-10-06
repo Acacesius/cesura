@@ -94,11 +94,12 @@ function apply(s) {
   $("q-hdr").classList.toggle("hidden", !s.queue.length);
   // Rebuild the rows only when the queue (or the CACHED tag) changed: patches keep an unchanged queue identical.
   const qkey = `${e.next_qid}|${e.next}`;
-  if (!prev || prev.queue !== s.queue || qkey !== renderedQkey) {
+  if (!sorter.dragging && (!prev || prev.queue !== s.queue || qkey !== renderedQkey)) {
     renderedQkey = qkey;
     const rows = s.queue.map((t, i) => qrow(t, i, e));
     $("queue").replaceChildren(...(rows.length ? rows : [emptyState("queue", "Nothing queued", "Search above to add songs, or share the code so guests can.")]));
     if (rows.length) touchQueue(rows, { onRemove: (qid) => remove(s.queue.find((t) => t.qid === qid)), onMove: move });
+    sorter.restore();
   }
   segs($("radio-sub"), s.radio ? ["Plays when the queue runs out", n ? `seeded from ${n.title}` : null] : ["Off. The room goes quiet when the queue runs out."]);
   $("radio-btn").textContent = s.radio ? "Turn off" : "Turn on";
@@ -154,26 +155,14 @@ function segs(node, parts) {
 function ago(s) { return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h`; }
 
 function qrow(t, i, engine) {
-  const row = el("div", { class: `qgrid qrow${i === 0 ? " first" : ""}`, draggable: "true" },
-    el("span", { class: "handle", html: icon("grip"), title: "Drag to reorder" }),
+  const row = el("div", { class: `qgrid qrow${i === 0 ? " first" : ""}` },
+    gripBtn(t),
     art(t),
     trackCell(t, engine, t.pinned ? el("span", { class: "tag amber", textContent: "PINNED" }) : null),
     el("span", { class: "who", title: t.by || "Guest" }, avatar(t.by || "?"), el("span", { class: "ellip name", textContent: t.by || "Guest" })),
     el("span", { class: "time", textContent: fmt(t.duration) }),
     el("button", { class: "iconbtn bare", html: icon("x"), ariaLabel: `Remove ${t.title}`, onclick: () => remove(t) }));
   row.dataset.qid = t.qid;
-  row.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", t.qid); e.dataTransfer.effectAllowed = "move"; row.classList.add("dragging"); });
-  row.addEventListener("dragend", () => row.classList.remove("dragging"));
-  row.addEventListener("dragover", (e) => { e.preventDefault(); row.classList.add("drop-above"); });
-  row.addEventListener("dragleave", () => row.classList.remove("drop-above"));
-  row.addEventListener("drop", (e) => {
-    e.preventDefault();
-    row.classList.remove("drop-above");
-    const qid = e.dataTransfer.getData("text/plain");
-    const from = state.queue.findIndex((x) => x.qid === qid);
-    if (from < 0 || qid === t.qid) return;
-    move(qid, from < i ? i - 1 : i);
-  });
   return row;
 }
 
@@ -226,7 +215,13 @@ function closeMenus() {
 
 // ---- actions
 async function remove(t) { if (t && (await roomPost("/api/remove", { qid: t.qid })).ok) toast(`Removed ${t.title}`); }
-async function move(qid, index) { await roomPost("/api/mod/move", { qid, index }); }
+// Drag to reorder (grip: mouse, touch, arrow keys). The server checks it against the queue as it is
+// now; if someone else moved it first, it refuses and the list redraws from the broadcast.
+async function move(qid, index, from) {
+  const r = await roomPost("/api/move", { qid, index, from_index: from });
+  if (!r.ok) toast((await r.json().catch(() => ({}))).detail || "Couldn't move that.");
+}
+const sorter = sortable($("queue"), { onMove: move, onIdle: () => { renderedQkey = null; if (state) apply(state); } });
 async function addIds(videoIds, label) {
   const r = await roomPost("/api/add", { videoIds });
   if (r.ok) { const { added } = await r.json(); toast(added > 1 ? `Added ${added} songs` : `Added ${label}`); }

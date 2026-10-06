@@ -260,6 +260,52 @@ def main():
             expect(theo.locator("#queue .trow").nth(0).locator(".t")).to_have_text(last_title, timeout=5000),
             expect(host.locator("#queue .qrow").first.locator(".tag", has_text="PINNED")).to_be_visible(timeout=5000)))
 
+        # Drag to reorder with the grip: a guest moves their own songs by touch (real touch events),
+        # the host by mouse and by keyboard. The server decides; every client redraws from the broadcast.
+        # Start from a short queue so every row is on screen: the host empties it, Maya adds 3, Theo 1.
+        host.evaluate("""async () => { for (const t of state.queue) await fetch('/api/remove', { method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Host-Key': localStorage.getItem('cesura.hostkey') },
+            body: JSON.stringify({ code: state.code, qid: t.qid }) }); }""")
+        search_add(maya, "abba", 3)
+        search_add(theo, "abba gimme", 1)
+        maya.click("nav.tabbar [data-tab=queue]")
+        maya.wait_for_timeout(800)
+        own = maya.locator("#queue .trow:has(.grip)")
+        check("guest sees grips on their own songs only", lambda: maya.wait_for_function(
+            """() => [...document.querySelectorAll('#queue .trow')].every((r, i) => !!r.querySelector('.grip') === (mine(state.queue[i]) && !state.queue[i].pinned))
+                && document.querySelectorAll('#queue .grip').length === 3""", timeout=5000))
+        n_own = own.count()
+        moved = own.nth(n_own - 1).locator(".t").inner_text()
+        g, top = own.nth(n_own - 1).locator(".grip").bounding_box(), own.nth(0).bounding_box()
+        cdp = maya_ctx.new_cdp_session(maya)
+        x, y = g["x"] + g["width"] / 2, g["y"] + g["height"] / 2
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+        for k in range(1, 11):
+            cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x, "y": y + (top["y"] - 10 - y) * k / 10}]})
+            maya.wait_for_timeout(30)
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+        check("guest touch-drags their own song ahead of their others", lambda: (
+            expect(maya.locator("#queue .trow:has(.grip)").first.locator(".t")).to_have_text(moved, timeout=5000)))
+
+        rows = host.locator("#queue .qrow")
+        last = rows.last.locator(".t").inner_text()
+        g, first_box = rows.last.locator(".grip").bounding_box(), rows.first.bounding_box()
+        host.mouse.move(g["x"] + g["width"] / 2, g["y"] + g["height"] / 2)
+        host.mouse.down()
+        for k in range(1, 13):
+            host.mouse.move(g["x"] + g["width"] / 2, g["y"] + (first_box["y"] + 5 - g["y"]) * k / 12)
+            host.wait_for_timeout(25)
+        host.mouse.up()
+        check("host mouse-drags the last song to the top; guests follow", lambda: (
+            expect(rows.first.locator(".t")).to_have_text(last, timeout=5000),
+            expect(maya.locator("#queue .trow").first.locator(".t")).to_have_text(last, timeout=5000)))
+        second = rows.nth(1).locator(".t").inner_text()
+        rows.nth(1).locator(".grip").focus()
+        host.keyboard.press("ArrowUp")
+        check("keyboard: ArrowUp on a grip moves it up and keeps focus", lambda: (
+            expect(rows.first.locator(".t")).to_have_text(second, timeout=5000),
+            host.wait_for_function("t => document.activeElement.classList.contains('grip') && document.activeElement.closest('.qrow').querySelector('.t').textContent === t", arg=second, timeout=3000)))
+
         # Tap targets: everything interactive on the phone screens is at least 44px in both directions (or wraps a 44px area).
         def small_targets(pg):
             return pg.evaluate("""() => [...document.querySelectorAll('button, a, input:not([type=checkbox]):not([type=range]), label.switch, [role=button]')]
