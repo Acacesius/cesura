@@ -306,6 +306,35 @@ def main():
             expect(rows.first.locator(".t")).to_have_text(second, timeout=5000),
             host.wait_for_function("t => document.activeElement.classList.contains('grip') && document.activeElement.closest('.qrow').querySelector('.t').textContent === t", arg=second, timeout=3000)))
 
+        # Seek: Maya scrubs the bar by touch; nothing is sent until she lets go, then one seek moves
+        # the room's clock and the host follows. The host steps with the arrow keys.
+        maya.click("nav.tabbar [data-tab=playing]")
+        maya.wait_for_function("() => state.status === 'playing' && state.now.duration", timeout=20000)
+        seeks = []
+        maya.on("request", lambda r: "/api/seek" in r.url and seeks.append(r.url))
+        bar = maya.locator("#np-bar").bounding_box()
+        cy = bar["y"] + bar["height"] / 2
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": bar["x"] + bar["width"] * 0.1, "y": cy}]})
+        for k in range(1, 9):
+            cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": bar["x"] + bar["width"] * (0.1 + 0.6 * k / 8), "y": cy}]})
+            maya.wait_for_timeout(40)
+        sent_while_dragging = len(seeks)
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+        check("seek by touch: nothing sent while dragging, one seek on release", lambda: (
+            sent_while_dragging == 0 or (_ for _ in ()).throw(AssertionError(f"{sent_while_dragging} sent mid-drag")),
+            maya.wait_for_timeout(800), len(seeks) == 1 or (_ for _ in ()).throw(AssertionError(f"{len(seeks)} seeks"))))
+        check("seek: the room clock and the host follow (~70%)", lambda: host.wait_for_function(
+            "() => { const p = posOf(state), d = state.now.duration; return p > d * 0.6 && p < d * 0.85; }", timeout=5000))
+        check("seek: attributed in Hands on it", lambda: expect(host.locator("#feed")).to_contain_text("Maya jumped to", timeout=5000))
+        check("seek: Maya's own audio jumps there too", lambda: maya.wait_for_function(
+            "() => Math.abs(document.getElementById('audio').currentTime - trackPos(state)) < 1.5 && trackPos(state) > state.now.duration * 0.6", timeout=8000))
+        p0 = host.evaluate("() => posOf(state)")
+        host.locator("#np-bar").focus()
+        for _ in range(3):
+            host.keyboard.press("ArrowLeft")
+        check("seek by keyboard: three ArrowLefts = one jump back ~15 s", lambda: host.wait_for_function(
+            "p0 => { const p = posOf(state); return p < p0 - 10 && p > p0 - 19; }", arg=p0, timeout=5000))
+
         # Tap targets: everything interactive on the phone screens is at least 44px in both directions (or wraps a 44px area).
         def small_targets(pg):
             return pg.evaluate("""() => [...document.querySelectorAll('button, a, input:not([type=checkbox]):not([type=range]), label.switch, [role=button]')]

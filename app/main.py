@@ -318,6 +318,15 @@ class Room:
         if self.started_at is not None and self.now and self.now.get("duration"):
             self.timer = asyncio.create_task(self._end_after(self.now["qid"], self.now["duration"] - self.position()))
 
+    def seek_to(self, pos: float):
+        """Move the clock to `pos` seconds into the current track. Holds self.lock.
+        Listeners re-steer to the new clock; the pocket station starts a new decoder there."""
+        if self.started_at is not None:
+            self.started_at = time.time() - pos
+        else:
+            self.frozen = pos
+        self.sync_clock()  # reschedules the end-of-track timer
+
     async def _end_after(self, qid: str, secs: float):
         await asyncio.sleep(max(0.0, secs) + 0.25)
         async with self.lock:
@@ -764,6 +773,10 @@ class PauseBody(ActBody):
     paused: bool
 
 
+class SeekBody(QidBody):
+    position: float
+
+
 class MoveBody(QidBody):
     index: int                     # where it goes, counted without it
     from_index: int | None = None  # where the client saw it: if it's moved since, the drag is refused
@@ -1016,6 +1029,31 @@ async def pause(body: PauseBody, request: Request):
             room.sync_clock()
     await room.broadcast()
     return {"ok": True}
+
+
+def mmss(secs: float) -> str:
+    return f"{int(secs) // 60}:{int(secs) % 60:02d}"
+
+
+@app.post("/api/seek")
+async def seek(body: SeekBody, request: Request):
+    """Jump to a position in the current track. Same rights as pause: anyone in the room, and the
+    room sees who. The server moves the clock; every listener and the pocket stream follow it."""
+    actor = actor_for(request, body)
+    if not math.isfinite(body.position):
+        raise HTTPException(400, "bad position")
+    async with room.lock:
+        if not room.now or room.now["qid"] != body.qid:
+            return {"ok": False, "stale": True}
+        if room.loading:
+            raise HTTPException(409, "The song is still loading.")
+        dur = room.now.get("duration") or 0
+        pos = max(0.0, min(body.position, dur) if dur else body.position)
+        room.seek_to(pos)
+        room.record(actor, "seek", f"jumped to {mmss(pos)} in {room.now['title']}")
+        room.hands = {"kind": "seek", "text": f"{actor.label} jumped to {mmss(pos)}"}
+    await room.broadcast()
+    return {"ok": True, "position": pos}
 
 
 @app.get("/api/lyrics")

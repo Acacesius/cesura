@@ -4,6 +4,7 @@ No YouTube: there are no cookies, so tracks never load, and radio is off.
 """
 import os
 import tempfile
+import time
 
 os.environ.setdefault("CONFIG_DIR", tempfile.mkdtemp())
 os.environ["HOST_KEY"] = "test-host-key"
@@ -308,3 +309,28 @@ def test_concurrent_drags_never_corrupt_the_queue(client):
         codes = list(ex.map(drag, range(60)))
     assert set(codes) <= {200, 409}
     assert sorted(t["qid"] for t in main.room.queue) == before
+
+
+def test_seek_moves_the_clock_clamps_and_is_attributed(client):
+    _, a = connect(client, "device-aaaa")
+    post(client, "/api/add", a, videoIds=ids(1))
+    room = main.room
+    qid = room.now["qid"]
+    assert post(client, "/api/seek", a, qid=qid, position=30).status_code == 409   # still loading
+    room.loading = False
+    room.now["duration"] = 200
+    r = post(client, "/api/seek", a, qid=qid, position=95.5).json()
+    assert r["ok"] and abs(room.position() - 95.5) < 0.05
+    assert post(client, "/api/seek", a, qid=qid, position=9999).json()["position"] == 200
+    assert post(client, "/api/seek", a, qid=qid, position=-5).json()["position"] == 0
+    assert post(client, "/api/seek", a, qid="stale", position=10).json() == {"ok": False, "stale": True}
+    assert post(client, "/api/seek", qid=qid, position=10).status_code == 401  # needs a session
+    assert room.host_panel()["feed"][0]["kind"] == "seek" and room.hands["kind"] == "seek"
+    # While the clock runs, a seek moves started_at and the end-of-track timer.
+    room.status = lambda: "playing"
+    try:
+        room.started_at = time.time() - 10
+        post(client, "/api/seek", a, qid=qid, position=150)
+        assert abs((time.time() - room.started_at) - 150) < 0.1 and room.timer is not None
+    finally:
+        del room.status

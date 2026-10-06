@@ -57,6 +57,11 @@ nav.tabbar button[aria-current=page] { color: var(--amber); }
 .np-sub { margin: 4px 0 0; font-size: 15px; color: var(--muted); }
 .progress { margin-top: 16px; }
 .track-bar { height: 14px; display: flex; align-items: center; }
+/* seekable (seekBar() in ds/core.js): a 32px-tall hit area around the thin bar */
+.track-bar[role=slider] { height: 32px; margin: -9px 0; cursor: pointer; touch-action: none; border-radius: 8px; }
+.track-bar[aria-disabled=true] { cursor: default; }
+.track-bar.scrubbing .knob, .track-bar[role=slider]:hover .knob { transform: scale(1.25); }
+.track-bar .knob { transition: transform .1s ease-out; }
 .track-bar .done { height: 6px; border-radius: 3px; background: var(--amber); }
 .track-bar .knob { width: 14px; height: 14px; margin: 0 -7px; border-radius: 50%; background: var(--text); flex: none; position: relative; z-index: 1; }
 .track-bar .rest { flex: 1; height: 6px; border-radius: 3px; background: var(--line-2); }

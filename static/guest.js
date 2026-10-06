@@ -295,10 +295,25 @@ function songRow(t) {
   return row;
 }
 
-// Progress + times, every half second
+// Seek: drag or click the bar, or arrow keys on it. Same rights as pause (anyone); the server moves
+// the clock and every phone (and the pocket stream) follows.
+const seeker = seekBar($("np-bar"), {
+  duration: () => (state && state.now && state.now.duration) || 0,
+  position: () => posOf(state),
+  enabled: () => !!(state && state.now && !["loading", "idle", "unlinked"].includes(state.status)),
+  onSeek: async (pos) => {
+    const r = await api("/api/seek", { qid: state.now.qid, position: pos });
+    if (!r.ok) { seeker.preview = null; toast((await r.json().catch(() => ({}))).detail || "Couldn't jump there."); }
+  },
+});
+
+// Progress + times, every half second (and while scrubbing, every frame)
 function tick() {
   if (!state) return;
-  const n = state.now, p = posOf(state), d = n ? n.duration || 0 : 0;
+  const n = state.now, real = posOf(state), d = n ? n.duration || 0 : 0;
+  seeker.settle(real);
+  const p = seeker.preview ?? real;
+  seeker.show(p, d);
   setBar($("np-bar"), d ? p / d : 0);
   $("np-pos").textContent = fmt(p);
   $("np-left").textContent = `-${fmt(Math.max(0, d - p))}`;
@@ -306,6 +321,8 @@ function tick() {
   renderSync();
 }
 setInterval(tick, 500);
+$("np-bar").addEventListener("pointermove", () => seeker.preview != null && tick());
+$("np-bar").addEventListener("keydown", () => setTimeout(tick));
 
 // ---- local playback, steered to the server clock
 const audio = $("audio");

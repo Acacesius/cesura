@@ -133,3 +133,36 @@ def test_mp3_fallback(tones):
         pcm = decode(data, "mp3")
         assert abs(dominant_hz(pcm[4000:]) - 440) < 25
     asyncio.run(go())
+
+
+def test_seek_restarts_only_the_decoder(tmp_path):
+    """A seek moves the room clock within the same track: the station starts a new decoder at the
+    new spot, and the one encoder (and every listener's stream) carries on unbroken."""
+    src = tmp_path / "two.m4a"  # 10 s at 440 Hz, then 10 s at 880 Hz: the pitch says where we are
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=10",
+                    "-f", "lavfi", "-i", "sine=frequency=880:duration=10", "-filter_complex", "[0][1]concat=n=2:v=0:a=1",
+                    "-c:a", "aac", str(src)], check=True)
+
+    async def go():
+        room = Room(str(src))
+        room.play("t1", str(src), at=1.0)
+        st = Station(room, idle_stop=0.5)
+        out = bytearray()
+
+        async def listen():
+            async for chunk in st.listen():
+                out.extend(chunk)
+        task = asyncio.create_task(listen())
+        await asyncio.sleep(2.5)
+        enc = st._enc
+        assert abs(dominant_hz(decode(bytes(out))[-6000:]) - 440) < 25
+        room.play("t1", str(src), at=13.0)   # seek: same track, new position
+        mark = len(out)
+        await asyncio.sleep(2.5 + pocket.AHEAD)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        assert st._enc is enc and st.decoder_starts == 2
+        assert abs(dominant_hz(decode(bytes(out))[-6000:]) - 880) < 25
+        assert len(out) > mark  # the stream never stopped
+        await st.aclose()
+    asyncio.run(go())

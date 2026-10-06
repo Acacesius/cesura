@@ -343,3 +343,62 @@ function sortable(list, { onMove, onIdle = () => {} }) {
   return ctl;
 }
 const gripBtn = (t) => el("button", { class: "grip", html: icon("grip"), title: "Drag to reorder", ariaLabel: `Move ${t.title}. Drag, or use the arrow keys.` });
+
+// ---- seeking: click or drag a progress bar, or arrow keys on it. While dragging, the target time
+// shows locally (ctl.preview) and nothing is sent; one onSeek(seconds) goes on release. Keys step
+// 5 s (PageUp/PageDown 30 s, Home/End) and send once they settle. After a seek, ctl.preview holds the
+// target until the server's broadcast catches up (ctl.settle(pos)), so the bar doesn't jump back.
+function seekBar(bar, { duration, position, onSeek, enabled = () => true, label = "Seek" }) {
+  const ctl = { preview: null };
+  let keyTimer = null, holdUntil = 0;
+  bar.setAttribute("role", "slider");
+  bar.setAttribute("aria-label", label);
+  bar.setAttribute("aria-valuemin", "0");
+  bar.tabIndex = 0;
+  const clamp = (p) => Math.max(0, Math.min(duration() || 0, p));
+  const at = (x) => { const b = bar.getBoundingClientRect(); return clamp(((x - b.left) / b.width) * duration()); };
+  const commit = (p) => { holdUntil = performance.now() + 2500; ctl.preview = p; onSeek(p); };
+  bar.addEventListener("pointerdown", (e) => {
+    if (!enabled() || !duration() || e.button > 0) return;
+    e.preventDefault();
+    try { bar.setPointerCapture(e.pointerId); } catch {}
+    bar.focus({ preventScroll: true });
+    bar.classList.add("scrubbing");
+    ctl.preview = at(e.clientX);
+    const move = (ev) => { ctl.preview = at(ev.clientX); };
+    const end = (ev) => {
+      bar.removeEventListener("pointermove", move);
+      bar.removeEventListener("pointerup", end);
+      bar.removeEventListener("pointercancel", end);
+      bar.classList.remove("scrubbing");
+      if (ev.type === "pointerup") commit(at(ev.clientX));
+      else ctl.preview = null;
+    };
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", end);
+    bar.addEventListener("pointercancel", end);
+  });
+  bar.addEventListener("keydown", (e) => {
+    const d = duration();
+    const step = { ArrowRight: 5, ArrowUp: 5, ArrowLeft: -5, ArrowDown: -5, PageUp: 30, PageDown: -30 }[e.key];
+    if (!enabled() || !d || (step == null && e.key !== "Home" && e.key !== "End")) return;
+    e.preventDefault();
+    const from = ctl.preview ?? position();
+    ctl.preview = e.key === "Home" ? 0 : e.key === "End" ? Math.max(0, d - 1) : clamp(from + step);
+    holdUntil = Infinity;
+    clearTimeout(keyTimer);
+    keyTimer = setTimeout(() => commit(ctl.preview), 450);
+  });
+  // Call on every state: drop the held preview once the server agrees (or after a while).
+  ctl.settle = (pos) => {
+    if (ctl.preview == null || bar.classList.contains("scrubbing") || holdUntil === Infinity) return;
+    if (Math.abs(pos - ctl.preview) < 1.5 || performance.now() > holdUntil) ctl.preview = null;
+  };
+  ctl.show = (pos, dur) => { // keep the slider's accessible value in step with what it shows
+    bar.setAttribute("aria-valuemax", String(Math.round(dur || 0)));
+    bar.setAttribute("aria-valuenow", String(Math.round(pos)));
+    bar.setAttribute("aria-valuetext", `${fmt(pos)} of ${fmt(dur)}`);
+    bar.setAttribute("aria-disabled", String(!enabled() || !dur));
+  };
+  return ctl;
+}

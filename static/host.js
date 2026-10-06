@@ -369,16 +369,33 @@ async function addCollection(kind, id, title) {
 document.addEventListener("click", (e) => { if (!e.target.closest(".addbox")) $("add-results").classList.add("hidden"); });
 $("add-q").addEventListener("focus", () => $("add-results").children.length && $("add-results").classList.remove("hidden"));
 
+// Seek: drag or click the bar, or arrow keys on it. The server moves the clock; everyone follows.
+const seeker = seekBar($("np-bar"), {
+  duration: () => (state && state.now && state.now.duration) || 0,
+  position: () => posOf(state),
+  enabled: () => !!(state && state.now && !["loading", "idle", "unlinked"].includes(state.status)),
+  onSeek: async (pos) => {
+    const r = await roomPost("/api/seek", { qid: state.now.qid, position: pos });
+    if (!r.ok) { seeker.preview = null; toast((await r.json().catch(() => ({}))).detail || "Couldn't jump there."); }
+  },
+});
+
 // progress + session timer
-setInterval(() => {
+function tick() {
   if (!state) return;
-  const n = state.now, p = posOf(state), d = n ? n.duration || 0 : 0;
+  const n = state.now, real = posOf(state), d = n ? n.duration || 0 : 0;
+  seeker.settle(real);
+  const p = seeker.preview ?? real;
+  seeker.show(p, d);
   setBar($("np-bar"), d ? p / d : 0);
   $("np-pos").textContent = fmt(p);
   $("np-dur").textContent = fmt(d);
   const secs = serverNow() - state.host.stats.session_start;
   $("p-session").textContent = `${Math.floor(secs / 3600)}:${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
-}, 500);
+}
+setInterval(tick, 500);
+$("np-bar").addEventListener("pointermove", () => seeker.preview != null && tick());
+$("np-bar").addEventListener("keydown", () => setTimeout(tick));
 
 function askForKey(msg = "") {
   document.querySelector(".host main").classList.add("hidden");
