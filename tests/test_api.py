@@ -448,3 +448,27 @@ def test_tracks_carry_artist_id():
     from app.media import to_track
     t = to_track({"videoId": "x" * 11, "title": "T", "artists": [{"name": "A", "id": "UC" + "c" * 22}]})
     assert t["artistId"] == "UC" + "c" * 22
+
+
+def test_host_socket_takes_the_key_in_its_first_message_not_the_url(client):
+    with client.websocket_connect("/ws/host") as ws:
+        ws.send_json({"type": "auth", "key": "test-host-key"})
+        assert ws.receive_json()["type"] == "state"
+    with client.websocket_connect("/ws/host") as ws:
+        ws.send_json({"type": "auth", "key": "wrong"})
+        with pytest.raises(Exception):
+            ws.receive_json()
+    assert client.get("/api/qr.svg?url=https://example.com/?code=X", headers=H).status_code == 200
+    assert client.get("/api/qr.svg?url=https://example.com/").status_code == 403
+
+
+def test_access_logs_mask_secrets_in_urls():
+    import logging
+    rec = logging.LogRecord("uvicorn.error", logging.INFO, "", 0, '%s - "WebSocket %s" [accepted]',
+                            ("1.2.3.4:5", "/ws/host?key=SECRETKEY&x=1"), None)
+    main.RedactSecrets().filter(rec)
+    assert "SECRETKEY" not in rec.getMessage() and "key=***&x=1" in rec.getMessage()
+    rec = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+                            ("1.2.3.4:5", "GET", "/ws?code=ABCDE&device=d1&token=TOK", "1.1", 200), None)
+    main.RedactSecrets().filter(rec)
+    assert "ABCDE" not in rec.getMessage() and "TOK" not in rec.getMessage() and "device=d1" in rec.getMessage()

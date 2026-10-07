@@ -26,8 +26,10 @@ GUESTS = 4
 
 
 class Client:
-    def __init__(self, url: str, answer_hb=True):
+    def __init__(self, url: str, answer_hb=True, auth: dict | None = None):
         self.ws = connect(url, max_size=None)
+        if auth:
+            self.ws.send(json.dumps(auth))
         self.bytes = self.msgs = 0
         self.last_state = None
         self.token = ""
@@ -73,7 +75,7 @@ def main():
             return json.loads(r.read() or b"null")
 
     ws_base = args.base.replace("http", "ws", 1)
-    host = Client(f"{ws_base}/ws/host?key={args.key}")
+    host = Client(f"{ws_base}/ws/host", auth={"type": "auth", "key": args.key})
     for _ in range(50):
         if host.last_state:
             break

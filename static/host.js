@@ -4,7 +4,6 @@
 const params = new URLSearchParams(location.search);
 const key = params.get("key") || localStorage.getItem("cesura.hostkey");
 if (params.get("key")) { localStorage.setItem("cesura.hostkey", params.get("key")); history.replaceState(null, "", "/host"); }
-const K = encodeURIComponent(key || "");
 let state = null, shownCode = null, artQid, renderedQkey = null;
 
 // Host actions carry the key in a header, never in the URL.
@@ -13,11 +12,25 @@ const roomPost = (path, body) => hostPost(path, { code: state.code, ...body });
 // PUBLIC_URL (server config) wins; otherwise the address this dashboard was opened on.
 const inviteUrl = () => `${(state && state.public_url) || location.origin}/?code=${state ? state.code : ""}`;
 
+// The QR is fetched with the key in a header (an <img src> can't send one), then shown from memory.
+let qrUrl = null;
+async function showQr(invite) {
+  try {
+    const r = await fetch(`/api/qr.svg?url=${encodeURIComponent(invite)}`, { headers: { "X-Host-Key": key || "" } });
+    if (!r.ok) return;
+    if (qrUrl) URL.revokeObjectURL(qrUrl);
+    qrUrl = URL.createObjectURL(await r.blob());
+    $("qr").src = qrUrl;
+  } catch {}
+}
+
 let live = null;
 function connect() {
   live = liveSocket({
     banner: $("conn"),
-    open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/host?key=${K}`),
+    // The key goes in the first message, never in the URL (URLs end up in access logs).
+    open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/host`),
+    onOpen: (ws) => ws.send(JSON.stringify({ type: "auth", key: key || "" })),
     onMessage: (m) => {
       if (m.type !== "state" && m.type !== "patch") return;
       const s = applyPatch(state, m);
@@ -117,7 +130,7 @@ function apply(s) {
     $("codebox").classList.toggle("fresh", rotated);
     $("code-note").classList.toggle("hidden", !rotated);
     $("join-url").textContent = inviteUrl();
-    $("qr").src = `/api/qr.svg?key=${K}&url=${encodeURIComponent(inviteUrl())}`;
+    showQr(inviteUrl());
     $("pop-guest").href = inviteUrl();
   }
   const set = h.settings;

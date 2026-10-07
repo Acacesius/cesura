@@ -47,6 +47,21 @@ from .presence import DEVICE_ID, HB_INTERVAL, Device, Presence
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("cesura")
+
+
+class RedactSecrets(logging.Filter):
+    """Access logs never show a secret from a URL: ?key=, ?token=, ?code= (and rubato's ?t=) values are masked.
+    The pages no longer put the host key in URLs; this also covers old links and tabs."""
+    PARAM = re.compile(r"([?&](?:key|token|code|t)=)[^&\s\"]+")
+
+    def filter(self, record):
+        if isinstance(record.args, tuple):
+            record.args = tuple(self.PARAM.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args)
+        return True
+
+
+for _name in ("uvicorn.access", "uvicorn.error"):  # uvicorn logs websocket handshakes on uvicorn.error
+    logging.getLogger(_name).addFilter(RedactSecrets())
 logging.getLogger("httpx").setLevel(logging.WARNING)  # its INFO lines contain signed googlevideo URLs
 
 CONFIG_DIR = os.environ.get("CONFIG_DIR", "/app/config")
@@ -1298,8 +1313,10 @@ def require_host(request: Request):
 
 
 @app.get("/api/qr.svg")
-async def qr(key: str, url: str, request: Request):
-    require_key(request, key)
+async def qr(url: str, request: Request, key: str = ""):
+    """The invite QR for the dashboard. The host key goes in the X-Host-Key header (the page fetches
+    the image); ?key= is still accepted from dashboards opened before the update."""
+    require_key(request, request.headers.get("x-host-key") or key)
     if not re.match(r"https?://", url) or len(url) > 300:
         raise HTTPException(400)
     buf = io.BytesIO()
@@ -1799,8 +1816,17 @@ async def guest_ws(ws: WebSocket, code: str = "", device: str = "", token: str =
 
 @app.websocket("/ws/host")
 async def host_ws(ws: WebSocket, key: str = ""):
-    """Host screen: same state plus the room code. Plays no audio."""
+    """Host screen: same state plus the room code. Plays no audio.
+
+    The key comes in the first message ({"type":"auth","key":...}), so it never appears in a URL or
+    an access log. ?key= still works for dashboards opened before the update (and is masked in logs)."""
     await ws.accept()
+    if not key:
+        try:
+            first = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=10))
+            key = str(first.get("key", "")) if isinstance(first, dict) and first.get("type") == "auth" else ""
+        except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
+            key = ""
     if check_secret(key, HOST_KEY, client_ip(ws)):
         await ws.close(code=4003, reason="bad host key")
         return
