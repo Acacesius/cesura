@@ -1,6 +1,7 @@
 """Downloads: one at a time, only the current and next track, paced to DOWNLOAD_RATE."""
 import asyncio
 import http.server
+import subprocess
 import socketserver
 import threading
 import time
@@ -40,7 +41,8 @@ def resolver(port, rate):
 
     async def get(vid, fresh=False):
         await asyncio.sleep(0.05)
-        return media.Resolved(f"http://127.0.0.1:{port}/{vid}", {}, SIZE, "audio/mp4", time.time() + 3600, "140 mp4a 128", 30.0)
+        # webm: the payload is zeros, not an MP4 to remux; these tests are about scheduling
+        return media.Resolved(f"http://127.0.0.1:{port}/{vid}", {}, SIZE, "audio/webm", time.time() + 3600, "140 mp4a 128", 30.0)
     r.get = get
     return r
 
@@ -78,3 +80,16 @@ def test_prefetch_of_current_track_is_reused(upstream):
         assert r.load("eeeeeeeeeee") is p  # the track that was next became current: same download
         await p
     asyncio.run(run())
+
+
+def test_fragmented_mp4_is_flattened_for_seeking(tmp_path):
+    # YouTube's audio is fragmented MP4 (moof/mdat pairs); Firefox can only seek it by reading from byte 0.
+    frag = tmp_path / "frag.m4a"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "sine=duration=30", "-c:a", "aac",
+                    "-movflags", "dash+global_sidx", "-frag_duration", "5000000", str(frag)], check=True)
+    data = frag.read_bytes()
+    assert b"moof" in data
+    flat = asyncio.run(media.flatten(data))
+    assert b"moof" not in flat and flat.index(b"moov") < flat.index(b"mdat")
+    with pytest.raises(RuntimeError, match="ffmpeg remux failed"):
+        asyncio.run(media.flatten(b"not an mp4"))

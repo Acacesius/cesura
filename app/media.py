@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import re
+import tempfile
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -194,6 +195,25 @@ def _extract(video_id: str) -> dict:
             os.unlink(tmp)
 
 
+async def flatten(data: bytes) -> bytes:
+    """Remux YouTube's fragmented MP4 into a plain one: moov up front with the full sample table.
+
+    Firefox can't seek a fragmented MP4 by byte range; it reads from byte 0 up to the target,
+    so a listener joining mid-song waits a minute or more in silence. Stream copy, no re-encode.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "flat.m4a")  # faststart rewrites the file, so it can't go to a pipe
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
+            "-map", "0:a", "-c", "copy", "-movflags", "+faststart", out,
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+        _, err = await proc.communicate(data)
+        if proc.returncode:
+            raise RuntimeError(f"ffmpeg remux failed: {err.decode(errors='replace').strip()}")
+        with open(out, "rb") as f:
+            return f.read()
+
+
 class Resolver:
     def __init__(self):
         self.cache: dict[str, Resolved] = {}
@@ -269,7 +289,8 @@ class Resolver:
         async for chunk in self.iter_range(video_id, 0, r.size - 1):
             buf += chunk
         log.info("downloaded %s: %d bytes in %.1fs", video_id, len(buf), time.monotonic() - t0)
-        return Media(bytes(buf), r.size, r.mime, r.duration)
+        data = await flatten(bytes(buf)) if r.mime == "audio/mp4" else bytes(buf)
+        return Media(data, len(data), r.mime, r.duration)
 
     async def get(self, video_id: str, fresh: bool = False) -> Resolved:
         lock = self.locks.setdefault(video_id, asyncio.Lock())

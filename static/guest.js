@@ -388,7 +388,7 @@ function steer() {
   // Clock hasn't reached where we're parked (track head start, or just resumed): wait.
   if (audio.paused && t < audio.currentTime && audio.currentTime - t < 3) return;
   const drift = audio.currentTime - t;
-  if (performance.now() > holdUntil) {
+  if (performance.now() > holdUntil && !audio.seeking) { // a new seek would cancel one still loading
     if (Math.abs(drift) > 1) {
       audio.currentTime = Math.max(0, t + 0.2);
       audio.playbackRate = 1;
